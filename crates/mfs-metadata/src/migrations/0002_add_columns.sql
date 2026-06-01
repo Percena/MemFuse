@@ -1,0 +1,3 @@
+-- Migration 0002: Add columns to existing tables
+-- This migration is applied via Rust code calling ensure_column() for idempotency.
+-- See schema.rs migration_0002() for the actual implementation.

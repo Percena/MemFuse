@@ -1,0 +1,16 @@
+[Unit]
+Description=MemFuse local memory service
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/memfuse-server --config %h/.memfuse/config.toml
+Restart=on-failure
+RestartSec=3
+WorkingDirectory=%h
+Environment=RUST_LOG=mfs_server=info
+Environment=MEMFUSE_HOME=%h/.memfuse
+TimeoutStopSec=35
+
+[Install]
+WantedBy=default.target

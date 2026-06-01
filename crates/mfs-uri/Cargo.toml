@@ -1,0 +1,12 @@
+[package]
+name = "mfs-uri"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+mfs-types = { path = "../mfs-types" }
+
+[lints]
+workspace = true

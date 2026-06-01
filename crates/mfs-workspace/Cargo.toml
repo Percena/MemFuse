@@ -1,0 +1,28 @@
+[package]
+name = "mfs-workspace"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+git2.workspace = true
+mfs-ast = { path = "../mfs-ast" }
+mfs-connectors = { path = "../mfs-connectors" }
+mfs-metadata = { path = "../mfs-metadata" }
+mfs-types = { path = "../mfs-types" }
+mfs-uri = { path = "../mfs-uri" }
+rusqlite.workspace = true
+serde.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["fs"] }
+zip.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

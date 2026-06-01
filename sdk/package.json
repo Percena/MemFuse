@@ -1,0 +1,61 @@
+{
+  "name": "@percena/memfuse",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MemFuse SDK — unified package for MCP server, hooks, skills, and client library",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "bin",
+    ".claude-plugin",
+    ".codex-plugin"
+  ],
+  "bin": {
+    "memfuse-mcp": "./bin/memfuse-mcp.cjs",
+    "memfuse-setup": "./bin/memfuse-setup.cjs",
+    "memfuse": "./bin/memfuse.cjs"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && find dist/skills -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + && rm -f dist/skills/SKILL.md && for skill in src/skills/*/; do name=$(basename \"$skill\"); mkdir -p dist/skills/$name && cp -R \"$skill\". dist/skills/$name/; done",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build --silent && node --test tests/*.test.mjs",
+    "lint": "tsc --noEmit",
+    "test:e2e:codex": "npm run build --silent && node tests/e2e/codex-real-memory.test.mjs --keep-artifacts",
+    "test:e2e:claude-code": "npm run build --silent && node tests/e2e/claude-code-real-memory.test.mjs --keep-artifacts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "hono": "4.12.18",
+    "fast-uri": "3.1.2",
+    "ip-address": "10.2.0",
+    "qs": "6.15.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./mcp": {
+      "import": "./dist/mcp/server.js",
+      "types": "./dist/mcp/server.d.ts"
+    },
+    "./hooks": {
+      "import": "./dist/hooks/index.js",
+      "types": "./dist/hooks/index.d.ts"
+    },
+    "./client": {
+      "import": "./dist/client/index.js",
+      "types": "./dist/client/index.d.ts"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+[package]
+name = "mfs-session"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+default = []
+test-support = ["dep:tempfile"]
+
+[dependencies]
+mfs-index = { path = "../mfs-index" }
+mfs-memory = { path = "../mfs-memory" }
+mfs-metadata = { path = "../mfs-metadata" }
+mfs-semantic = { path = "../mfs-semantic" }
+mfs-types = { path = "../mfs-types" }
+mfs-uri = { path = "../mfs-uri" }
+mfs-workspace = { path = "../mfs-workspace" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+mfs-test-util = { path = "../mfs-test-util" }
+mfs-types = { path = "../mfs-types" }
+mfs-uri = { path = "../mfs-uri" }
+tempfile.workspace = true
+mfs-session = { path = ".", features = ["test-support"] }
+
+[lints]
+workspace = true

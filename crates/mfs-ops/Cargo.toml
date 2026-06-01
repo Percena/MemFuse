@@ -1,0 +1,32 @@
+[package]
+name = "mfs-ops"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+mfs-ast = { path = "../mfs-ast" }
+mfs-connectors = { path = "../mfs-connectors" }
+mfs-index = { path = "../mfs-index" }
+mfs-metadata = { path = "../mfs-metadata" }
+mfs-retrieval = { path = "../mfs-retrieval" }
+mfs-semantic = { path = "../mfs-semantic" }
+mfs-session = { path = "../mfs-session" }
+mfs-types = { path = "../mfs-types" }
+mfs-uri = { path = "../mfs-uri" }
+mfs-workspace = { path = "../mfs-workspace" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["fs", "rt", "time"] }
+tracing.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true

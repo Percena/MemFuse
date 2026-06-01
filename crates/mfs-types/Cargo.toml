@@ -1,0 +1,14 @@
+[package]
+name = "mfs-types"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+regex.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

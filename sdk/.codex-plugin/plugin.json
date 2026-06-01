@@ -1,0 +1,40 @@
+{
+  "name": "memfuse",
+  "version": "0.1.0",
+  "description": "Signal-beacon memory framework for coding agents — LOOK→DIG→SAVE workflow with LLM-assisted extraction and deterministic fallback",
+  "author": {
+    "name": "MemFuse Team"
+  },
+  "repository": "https://github.com/Percena/MemFuse",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "codex-cli",
+    "mcp",
+    "plugin",
+    "memory",
+    "signal-beacon",
+    "observation",
+    "episode",
+    "fact",
+    "rust"
+  ],
+  "homepage": "https://github.com/Percena/MemFuse#readme",
+  "interface": {
+    "displayName": "MemFuse",
+    "shortDescription": "Signal-beacon memory for coding agents — directional signals, not encyclopedic answers.",
+    "longDescription": "MemFuse provides persistent memory across coding sessions using a signal-beacon philosophy. It tells agents WHERE relevant information lives and WHAT kind it is, not precise encyclopedic answers. LLM-assisted extraction with deterministic fallback ensures the system never blocks.",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/Percena/MemFuse",
+    "defaultPrompt": [
+      "What do I already know about this project from previous sessions?",
+      "Find past decisions and observations related to the current task.",
+      "Store this important finding for future sessions."
+    ],
+    "brandColor": "#F59E0B"
+  }
+}

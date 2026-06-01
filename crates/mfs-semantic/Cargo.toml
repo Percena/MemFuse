@@ -1,0 +1,25 @@
+[package]
+name = "mfs-semantic"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+mfs-index = { path = "../mfs-index" }
+mfs-ast = { path = "../mfs-ast" }
+mfs-types = { path = "../mfs-types" }
+reqwest = { workspace = true, features = ["json"] }
+serde_json.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

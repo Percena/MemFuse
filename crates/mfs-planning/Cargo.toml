@@ -1,0 +1,17 @@
+[package]
+name = "mfs-planning"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+mfs-metadata = { path = "../mfs-metadata" }
+mfs-types = { path = "../mfs-types" }
+serde_json.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

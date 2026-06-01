@@ -1,0 +1,441 @@
+/**
+ * MemFuse Setup (Install)
+ *
+ * Configures MCP server, hooks, skills, and plugin manifests
+ * for Claude Code and/or Codex.
+ *
+ * Install flow (3 + 1 layers):
+ *   1. MCP server   — CLI preferred, JSON fallback
+ *   2. Hooks        — JSON config (platform-specific format)
+ *   3. Skills        — copy to standard skill directories
+ *   4. Plugin manifest — copy .claude-plugin/ or .codex-plugin/
+ *
+ * Platform differences (intentional, minimal):
+ *   - Claude Code: 7+1 hooks (incl. PreToolUse[Read] + UserPromptSubmit), .claude/ dirs
+ *   - Codex: 3 hooks (no PreToolUse/PreCompact/SessionEnd), .codex/ dirs
+ */
+
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { installSkill, SKILL_NAMES } from '../skills/loader.js';
+import { httpRequest } from '../shared/http.js';
+
+// ─── Configuration helpers ──────────────────────────────────────────────
+
+interface SetupOptions {
+  platform?: 'claude-code' | 'codex' | 'both';
+  projectDir?: string;
+  userId?: string;
+  serverUrl?: string;
+}
+
+type CodexHookEventName = 'SessionStart' | 'PostToolUse' | 'Stop';
+
+interface CodexHookSpec {
+  eventName: CodexHookEventName;
+  matcher?: string;
+  command: string;
+  timeout: number;
+}
+
+const CODEX_HOOK_EVENT_KEYS: Record<CodexHookEventName, string> = {
+  SessionStart: 'session_start',
+  PostToolUse: 'post_tool_use',
+  Stop: 'stop',
+};
+
+const CODEX_HOOK_EVENTS_WITH_MATCHERS = new Set<CodexHookEventName>([
+  'SessionStart',
+  'PostToolUse',
+]);
+
+function getSdkRoot(): string {
+  return resolve(join(fileURLToPath(import.meta.url), '..', '..', '..'));
+}
+
+function ensureJsonFile(file: string): void {
+  if (!existsSync(file)) {
+    writeFileSync(file, '{}\n', 'utf-8');
+  }
+}
+
+function getCodexHome(): string {
+  return resolve(process.env.CODEX_HOME || join(homedir(), '.codex'));
+}
+
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => [key, canonicalJson((value as Record<string, unknown>)[key])]),
+    );
+  }
+  return value;
+}
+
+function codexHookTrustHash(spec: CodexHookSpec): string {
+  const group: Record<string, unknown> = {
+    event_name: CODEX_HOOK_EVENT_KEYS[spec.eventName],
+    hooks: [{
+      type: 'command',
+      command: spec.command,
+      timeout: Math.max(1, spec.timeout),
+      async: false,
+    }],
+  };
+  if (CODEX_HOOK_EVENTS_WITH_MATCHERS.has(spec.eventName) && spec.matcher !== undefined) {
+    group.matcher = spec.matcher;
+  }
+  const serialized = JSON.stringify(canonicalJson(group));
+  return `sha256:${createHash('sha256').update(serialized).digest('hex')}`;
+}
+
+function tomlQuote(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function upsertCodexHooksFeature(configToml: string): string {
+  const lines = configToml.replace(/\r\n/g, '\n').split('\n');
+  const featureHeader = /^\s*\[features]\s*(?:#.*)?$/;
+  const anyHeader = /^\s*\[.*]\s*(?:#.*)?$/;
+  const start = lines.findIndex((line) => featureHeader.test(line));
+
+  if (start === -1) {
+    const prefix = configToml.trimEnd();
+    return `${prefix}${prefix ? '\n\n' : ''}[features]\nhooks = true\n`;
+  }
+
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (anyHeader.test(lines[i] || '')) {
+      end = i;
+      break;
+    }
+  }
+
+  let foundHooks = false;
+  const nextLines = [...lines.slice(0, start + 1)];
+  for (const line of lines.slice(start + 1, end)) {
+    if (/^\s*codex_hooks\s*=/.test(line)) continue;
+    if (/^\s*hooks\s*=/.test(line)) {
+      nextLines.push('hooks = true');
+      foundHooks = true;
+      continue;
+    }
+    nextLines.push(line);
+  }
+  if (!foundHooks) nextLines.splice(start + 1, 0, 'hooks = true');
+  nextLines.push(...lines.slice(end));
+  return nextLines.join('\n');
+}
+
+function removeTomlTables(configToml: string, tableHeaders: Set<string>): string {
+  const lines = configToml.replace(/\r\n/g, '\n').split('\n');
+  const anyHeader = /^\s*\[.*]\s*(?:#.*)?$/;
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length;) {
+    const trimmed = (lines[i] || '').trim();
+    if (tableHeaders.has(trimmed)) {
+      i++;
+      while (i < lines.length && !anyHeader.test(lines[i] || '')) i++;
+      continue;
+    }
+    kept.push(lines[i] || '');
+    i++;
+  }
+  return kept.join('\n');
+}
+
+function writeCodexHookTrustConfig(configFile: string, hooksFile: string, specs: CodexHookSpec[]): void {
+  mkdirSync(dirname(configFile), { recursive: true });
+  const canonicalHooksFile = realpathSync(hooksFile);
+  const hookStates = specs.map((spec) => {
+    const eventKey = CODEX_HOOK_EVENT_KEYS[spec.eventName];
+    const key = `${canonicalHooksFile}:${eventKey}:0:0`;
+    return { key, hash: codexHookTrustHash(spec) };
+  });
+  const tableHeaders = new Set(hookStates.map(({ key }) => `[hooks.state.${tomlQuote(key)}]`));
+  let configToml = existsSync(configFile) ? readFileSync(configFile, 'utf-8') : '';
+  configToml = upsertCodexHooksFeature(configToml);
+  configToml = removeTomlTables(configToml, tableHeaders).trimEnd();
+  const trustBlocks = hookStates
+    .map(({ key, hash }) => `[hooks.state.${tomlQuote(key)}]\ntrusted_hash = ${tomlQuote(hash)}`)
+    .join('\n\n');
+  writeFileSync(configFile, `${configToml}${configToml ? '\n\n' : ''}${trustBlocks}\n`, 'utf-8');
+}
+
+function mergeJson(file: string, snippet: Record<string, unknown>): void {
+  let existing: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    try { existing = JSON.parse(readFileSync(file, 'utf-8')); } catch { existing = {}; }
+  }
+  const merged = { ...existing, ...snippet };
+  for (const key of Object.keys(snippet)) {
+    if (typeof snippet[key] === 'object' && !Array.isArray(snippet[key]) && typeof existing[key] === 'object' && !Array.isArray(existing[key])) {
+      merged[key] = { ...(existing[key] as Record<string, unknown>), ...(snippet[key] as Record<string, unknown>) };
+    }
+    if (key === 'hooks' && Array.isArray(snippet[key]) && Array.isArray(existing[key])) {
+      // Deduplicate hooks by event+cmd signature before concatenating
+      const existingHooks = existing[key] as Array<Record<string, unknown>>;
+      const newHooks = snippet[key] as Array<Record<string, unknown>>;
+      const seen = new Set<string>();
+      for (const h of existingHooks) {
+        seen.add(String(h.event || '') + '|' + JSON.stringify(h.cmd || h.command || ''));
+      }
+      const dedupedNew = newHooks.filter(h => {
+        const sig = String(h.event || '') + '|' + JSON.stringify(h.cmd || h.command || '');
+        return !seen.has(sig);
+      });
+      merged[key] = [...existingHooks, ...dedupedNew];
+    }
+  }
+  writeFileSync(file, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+}
+
+/** Try to add MCP server via CLI command, return true if succeeded */
+function tryMcpCliAdd(cliCmd: string[], serverName: string, command: string, args: string[], envVars: Record<string, string>): boolean {
+  try {
+    const [bin, ...cliArgs] = cliCmd;
+    if (!bin) return false;
+    const envArgs = Object.entries(envVars).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
+    execFileSync(bin, [...cliArgs, serverName, command, ...envArgs, ...args], { stdio: 'pipe', timeout: 10000 });
+    return true;
+  } catch { return false; }
+}
+
+/** Copy plugin manifest from source to the platform-specific plugin directory */
+function installPluginManifest(
+  sourcePluginDir: string,
+  targetDir: string,
+  pluginDirName: '.claude-plugin' | '.codex-plugin',
+): string {
+  const sourceManifest = join(sourcePluginDir, 'plugin.json');
+  if (!existsSync(sourceManifest)) return '';
+
+  const targetPluginDir = join(targetDir, pluginDirName);
+  mkdirSync(targetPluginDir, { recursive: true });
+  cpSync(sourceManifest, join(targetPluginDir, 'plugin.json'), { force: true });
+  return targetPluginDir;
+}
+
+// ─── Main setup ─────────────────────────────────────────────────────────
+
+export async function runSetup(args: string[]): Promise<void> {
+  const options: SetupOptions = { platform: 'both', projectDir: process.cwd() };
+
+  for (const arg of args) {
+    if (arg.startsWith('--platform=')) options.platform = arg.split('=')[1] as SetupOptions['platform'];
+    else if (arg.startsWith('--project-dir=')) options.projectDir = resolve(arg.split('=')[1]);
+    else if (arg.startsWith('--user-id=')) options.userId = arg.split('=')[1];
+    else if (arg.startsWith('--server-url=')) options.serverUrl = arg.split('=')[1];
+    else { console.error(`Unknown argument: ${arg}`); process.exit(1); }
+  }
+
+  const serverUrl = options.serverUrl || process.env.MEMFUSE_SERVER_URL || 'http://127.0.0.1:8720';
+  const userId = options.userId || process.env.MEMFUSE_USER_ID || process.env.USER || 'default';
+
+  console.log('MemFuse Install');
+  console.log(`  Platform:    ${options.platform}`);
+  console.log(`  Project dir: ${options.projectDir}`);
+  console.log(`  User ID:     ${userId}`);
+  console.log(`  Server URL:  ${serverUrl}`);
+  console.log('');
+
+  const skipMcp = process.env['MEMFUSE_SKIP_MCP'] === '1';
+  const installMode = process.env['MEMFUSE_INSTALL_MODE'] || 'full';
+
+  if (options.platform === 'claude-code' || options.platform === 'both') {
+    await installClaudeCode(options.projectDir!, serverUrl, userId, skipMcp, installMode);
+  }
+  if (options.platform === 'codex' || options.platform === 'both') {
+    await installCodex(options.projectDir!, serverUrl, userId, skipMcp, installMode);
+  }
+
+  await healthCheck(serverUrl);
+}
+
+// ─── Claude Code installer ──────────────────────────────────────────────
+
+async function installClaudeCode(projectDir: string, serverUrl: string, userId: string, skipMcp: boolean, installMode: string): Promise<void> {
+  console.log('=== Installing for Claude Code ===');
+
+  const sdkRoot = getSdkRoot();
+  const mcpServerPath = join(sdkRoot, 'bin', 'memfuse-mcp.cjs');
+  const hooksDir = join(sdkRoot, 'bin', 'hooks');
+  const claudeDir = join(projectDir, '.claude');
+  const skillsDir = join(projectDir, '.claude', 'skills');
+  const envVars = { MEMFUSE_USER_ID: userId, MEMFUSE_SERVER_URL: serverUrl };
+
+  const doMcp = !skipMcp;
+  const doHooks = installMode === 'full' || installMode === 'skills-hooks' || installMode === 'hooks-only';
+  const doSkills = installMode === 'full' || installMode === 'skills-hooks' || installMode === 'skills-only';
+
+  // 1. MCP server — try CLI first, fallback to JSON
+  if (doMcp) {
+    const cliAdded = tryMcpCliAdd(['claude', 'mcp', 'add'], 'memfuse', 'node', [mcpServerPath], envVars);
+    if (cliAdded) {
+      console.log('  ✓ MCP server added via `claude mcp add`');
+    } else {
+      mkdirSync(claudeDir, { recursive: true });
+      const settingsFile = join(claudeDir, 'settings.local.json');
+      ensureJsonFile(settingsFile);
+      mergeJson(settingsFile, { mcpServers: { memfuse: { command: 'node', args: [mcpServerPath], env: envVars } } });
+      console.log(`  ✓ MCP server configured in ${settingsFile} (CLI unavailable)`);
+    }
+  } else {
+    console.log('  ⊘ MCP registration skipped (--no-mcp)');
+  }
+
+  // 2. Hooks
+  if (doHooks) {
+    mkdirSync(claudeDir, { recursive: true });
+    const settingsFile = join(claudeDir, 'settings.local.json');
+    ensureJsonFile(settingsFile);
+    mergeJson(settingsFile, {
+      hooks: [
+        { event: 'SessionStart', cmd: ['node', join(hooksDir, 'session-start.cjs')], timeout: 15 },
+        { event: 'PostToolUse', cmd: ['node', join(hooksDir, 'post-tool-use.cjs')] },
+        { event: 'PreToolUse', matcher: 'Read', cmd: ['node', join(hooksDir, 'pre-tool-use.cjs')], timeout: 3 },
+        { event: 'Stop', cmd: ['node', join(hooksDir, 'stop.cjs')], timeout: 10 },
+        { event: 'PreCompact', cmd: ['node', join(hooksDir, 'pre-compact.cjs')], timeout: 10 },
+        { event: 'SessionEnd', cmd: ['node', join(hooksDir, 'session-end.cjs')] },
+        { event: 'UserPromptSubmit', cmd: ['node', join(hooksDir, 'user-prompt-submit.cjs')], timeout: 3 },
+        { event: 'Setup', cmd: ['node', join(hooksDir, 'setup.cjs')] },
+      ],
+    });
+    console.log('  ✓ Hooks configured (SessionStart, PostToolUse, PreToolUse[Read], Stop, PreCompact, SessionEnd, UserPromptSubmit, Setup)');
+  } else {
+    console.log('  ⊘ Hooks skipped (--skills only)');
+  }
+
+  // 3. Skills
+  if (doSkills) {
+    for (const name of SKILL_NAMES) {
+      const targetPath = installSkill(name, skillsDir);
+      console.log(`  ✓ Skill '${name}' installed at ${targetPath}`);
+    }
+  } else {
+    console.log('  ⊘ Skills skipped (--hooks only)');
+  }
+
+  // 4. Plugin manifest
+  const manifestDir = installPluginManifest(join(sdkRoot, '.claude-plugin'), projectDir, '.claude-plugin');
+  if (manifestDir) console.log(`  ✓ Plugin manifest installed at ${manifestDir}`);
+
+  console.log('=== Claude Code installation complete ===');
+  console.log('');
+}
+
+// ─── Codex installer ────────────────────────────────────────────────────
+
+async function installCodex(projectDir: string, serverUrl: string, userId: string, skipMcp: boolean, installMode: string): Promise<void> {
+  console.log('=== Installing for Codex ===');
+
+  const sdkRoot = getSdkRoot();
+  const mcpServerPath = join(sdkRoot, 'bin', 'memfuse-mcp.cjs');
+  const hooksDir = join(sdkRoot, 'bin', 'hooks');
+  const codexDir = join(projectDir, '.codex');
+  const skillsDir = join(projectDir, '.codex', 'skills');
+  const envVars = { MEMFUSE_USER_ID: userId, MEMFUSE_SERVER_URL: serverUrl };
+
+  const doMcp = !skipMcp;
+  const doHooks = installMode === 'full' || installMode === 'skills-hooks' || installMode === 'hooks-only';
+  const doSkills = installMode === 'full' || installMode === 'skills-hooks' || installMode === 'skills-only';
+
+  // 1. MCP server
+  if (doMcp) {
+    const cliAdded = tryMcpCliAdd(['codex', 'mcp', 'add'], 'memfuse', 'node', [mcpServerPath], envVars);
+    if (cliAdded) {
+      console.log('  ✓ MCP server added via `codex mcp add`');
+    } else {
+      mkdirSync(codexDir, { recursive: true });
+      const mcpFile = join(codexDir, 'mcp.json');
+      ensureJsonFile(mcpFile);
+      mergeJson(mcpFile, { mcpServers: { memfuse: { command: 'node', args: [mcpServerPath], env: envVars } } });
+      console.log(`  ✓ MCP server configured in ${mcpFile} (CLI unavailable)`);
+    }
+  } else {
+    console.log('  ⊘ MCP registration skipped (--no-mcp)');
+  }
+
+  // 2. Hooks
+  if (doHooks) {
+    mkdirSync(codexDir, { recursive: true });
+    const hooksFile = join(codexDir, 'hooks.json');
+    const hookSpecs: CodexHookSpec[] = [
+      {
+        eventName: 'SessionStart',
+        matcher: 'startup|resume|clear|compact',
+        command: `node ${join(hooksDir, 'session-start.cjs')}`,
+        timeout: 15,
+      },
+      {
+        eventName: 'PostToolUse',
+        matcher: 'Bash|Read|Edit|Write|MultiEdit|Glob|Grep|mcp__.*',
+        command: `node ${join(hooksDir, 'post-tool-use.cjs')}`,
+        timeout: 15,
+      },
+      {
+        eventName: 'Stop',
+        command: `node ${join(hooksDir, 'stop.cjs')}`,
+        timeout: 10,
+      },
+    ];
+    ensureJsonFile(hooksFile);
+    mergeJson(hooksFile, {
+      hooks: {
+        SessionStart: [{ matcher: hookSpecs[0].matcher, hooks: [{ type: 'command', command: hookSpecs[0].command, timeout: hookSpecs[0].timeout }] }],
+        PostToolUse: [{ matcher: hookSpecs[1].matcher, hooks: [{ type: 'command', command: hookSpecs[1].command, timeout: hookSpecs[1].timeout }] }],
+        Stop: [{ hooks: [{ type: 'command', command: hookSpecs[2].command, timeout: hookSpecs[2].timeout }] }],
+      },
+    });
+    const codexConfigFile = join(getCodexHome(), 'config.toml');
+    writeCodexHookTrustConfig(codexConfigFile, hooksFile, hookSpecs);
+    console.log('  ✓ Hooks configured (SessionStart, PostToolUse[Bash/Read/Edit/Write/Glob/Grep/MCP], Stop)');
+    console.log(`  ✓ Codex hooks enabled and trusted in ${codexConfigFile}`);
+  } else {
+    console.log('  ⊘ Hooks skipped (--skills only)');
+  }
+
+  // 3. Skills
+  if (doSkills) {
+    for (const name of SKILL_NAMES) {
+      const targetPath = installSkill(name, skillsDir);
+      console.log(`  ✓ Skill '${name}' installed at ${targetPath}`);
+    }
+  } else {
+    console.log('  ⊘ Skills skipped (--hooks only)');
+  }
+
+  // 4. Plugin manifest
+  const manifestDir = installPluginManifest(join(sdkRoot, '.codex-plugin'), projectDir, '.codex-plugin');
+  if (manifestDir) console.log(`  ✓ Plugin manifest installed at ${manifestDir}`);
+
+  console.log('=== Codex installation complete ===');
+  console.log('');
+}
+
+// ─── Health check ────────────────────────────────────────────────────────
+
+async function healthCheck(serverUrl: string): Promise<void> {
+  console.log('=== Health Check ===');
+  try {
+    const result = await httpRequest(serverUrl, 'GET', '/health', null);
+    if (result.statusCode >= 200 && result.statusCode < 400) {
+      console.log('  ✓ MemFuse server online');
+    } else {
+      console.log('  ⚠ MemFuse server unhealthy — status', result.statusCode);
+    }
+  } catch {
+    console.log('  ⚠ MemFuse server offline — will operate in degraded mode');
+    console.log('    Start the service: memfuse service start');
+    console.log('    Development server: ./run-server.sh');
+  }
+  console.log('=== Health check complete ===');
+}

@@ -1,0 +1,28 @@
+# MemFuse Docker Compose
+# Rust-only deployment — single server with SQLite backend
+# No PostgreSQL, no migrations — all metadata in embedded SQLite
+
+services:
+  memfuse-server:
+    image: memfuse-app:local
+    build: .
+    container_name: memfuse-server
+    environment:
+      MEMFUSE_WORKSPACE_ROOT: /data/workspace
+      MEMFUSE_SOURCE_KIND: ${MEMFUSE_SOURCE_KIND:-managed}
+      MEMFUSE_BIND_ADDR: "0.0.0.0:8720"
+      MEMFUSE_ACCOUNT_ID: ${MEMFUSE_ACCOUNT_ID:-default}
+      MEMFUSE_USER_ID: ${MEMFUSE_USER_ID:-default}
+      MEMFUSE_AGENT_ID: ${MEMFUSE_AGENT_ID:-default}
+      MEMFUSE_AUTH_MODE: ${MEMFUSE_AUTH_MODE:-dev}
+      MEMFUSE_API_KEY: ${MEMFUSE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MEMFUSE_OPENAI_API_KEY: ${MEMFUSE_OPENAI_API_KEY:-}
+      MEMFUSE_JINA_API_KEY: ${MEMFUSE_JINA_API_KEY:-}
+    ports:
+      - "8720:8720"
+    volumes:
+      - memfuse-data:/data
+
+volumes:
+  memfuse-data:

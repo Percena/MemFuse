@@ -1,0 +1,12 @@
+[package]
+name = "mfs-test-util"
+description = "Test utilities for mfs crates (env isolation, helpers)"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
