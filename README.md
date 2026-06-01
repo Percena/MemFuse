@@ -25,21 +25,18 @@
 
 ## Quick Start
 
-### 1. Start the Server
+### 1. Install and Start the Server
+
+Download the latest release from [GitHub Releases](https://github.com/Percena/MemFuse/releases) for your platform, or build from source:
 
 ```bash
-# Development: use the helper script (loads repo .env, sets defaults, creates workspace dir)
-./run-server.sh
+# Pre-built binary (macOS)
+# Download from Releases page, extract, and run
+./memfuse-server
 
-# Standalone binary: uses OS default config/data paths when no env is set
-cargo build --release -p mfs-server && ./target/release/mfs-server --print-config
-./target/release/mfs-server
-
-# Or via Docker
-docker-compose up
+# Or build from source
+cargo build --release -p mfs-server && ./target/release/mfs-server
 ```
-
-> `run-server.sh` is a repo development shortcut. Independent service installs should use `memfuse service install/start` and the OS user config file, not a repo-local `.env`.
 
 Server listens on port **8720** by default. Verify:
 
@@ -47,45 +44,41 @@ Server listens on port **8720** by default. Verify:
 curl http://127.0.0.1:8720/health
 ```
 
+Without API keys, MemFuse runs in **deterministic mode** (regex facts, keyword search, Jaccard matching) and never blocks. Set `MEMFUSE_OPENAI_API_KEY` or `MEMFUSE_JINA_API_KEY` for richer LLM-assisted extraction.
+
 ### 2. Install the SDK
 
 ```bash
-cd sdk && npm install && npm run build
+npm install @percena/memfuse
+```
 
+### 3. Set Up for Your Agent Platform
+
+```bash
 # Claude Code
-node bin/memfuse-setup.cjs install --platform=claude-code
+npx memfuse-setup install --platform=claude-code
 
 # Codex
-node bin/memfuse-setup.cjs install --platform=codex
+npx memfuse-setup install --platform=codex
 ```
 
 That's it. MemFuse hooks into the agent lifecycle transparently — no explicit "use memfuse" commands needed.
 
-### 3. Optional: Configure Runtime and Enable LLM-Assisted Extraction
-
-For development, create `.env` from `.env.example`:
+### 4. Optional: Install as a System Service
 
 ```bash
-cp .env.example .env
-# Set OPENAI_API_KEY and/or JINA_API_KEY for richer extraction
+npx memfuse service install
+npx memfuse service start
+npx memfuse service doctor
 ```
 
-Without LLM keys, MemFuse runs in **deterministic mode** (regex facts, keyword search, Jaccard matching) and never blocks.
+**Core configuration:**
 
-For standalone service installs, use the generated `config.toml`:
-
-```bash
-cd sdk && npm install && npm run build
-MEMFUSE_SERVER_BIN="$PWD/../target/release/memfuse-server" node bin/memfuse.cjs service install
-node bin/memfuse.cjs service start
-node bin/memfuse.cjs service doctor
-```
-
-**Core variables and equivalent config fields:**
-
-| Variable | Description |
-|----------|-------------|
-| `MEMFUSE_WORKSPACE_ROOT` / `[storage].data_dir` | MemFuse internal data root (SQLite, sessions, projected resources). Defaults to the OS user data directory outside repo development. |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMFUSE_WORKSPACE_ROOT` | `~/.memfuse/data` | Data root (SQLite, sessions, projected resources) |
+| `MEMFUSE_OPENAI_API_KEY` | — | Enables LLM-assisted extraction (OpenAI-compatible) |
+| `MEMFUSE_JINA_API_KEY` | — | Enables semantic search (Jina embeddings) |
 
 ---
 
@@ -177,8 +170,8 @@ curl -X POST http://localhost:8720/v1/memory:search \
 {
   "mcpServers": {
     "memfuse": {
-      "command": "node",
-      "args": ["./sdk/bin/memfuse-mcp.cjs"],
+      "command": "npx",
+      "args": ["memfuse-mcp"],
       "env": {
         "MEMFUSE_SERVER_URL": "http://localhost:8720",
         "MEMFUSE_USER_ID": "your-user-id"
@@ -277,7 +270,7 @@ Git resources auto-discover host, namespace, repo, and ref from the remote origi
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MEMFUSE_WORKSPACE_ROOT` | — (required) | Data root (SQLite, sessions, projected resources) |
+| `MEMFUSE_WORKSPACE_ROOT` | `~/.memfuse/data` | Data root (SQLite, sessions, projected resources) |
 | `MEMFUSE_BIND_ADDR` | `127.0.0.1:8720` | Server bind address |
 | `MEMFUSE_SERVER_URL` | `http://127.0.0.1:8720` | SDK: server URL |
 | `MEMFUSE_USER_ID` | `default` | User identifier |
@@ -373,19 +366,26 @@ The Node.js CLI (`memfuse`) provides 110 commands covering all API operations. T
 
 ```bash
 # Search memories
-memfuse search --query "auth decisions" --strategy diverse
+npx memfuse search --query "auth decisions" --strategy diverse
 
 # Inspect a resource
-memfuse abstract --uri mfs://resources/git/github.com/org/repo
+npx memfuse abstract --uri mfs://resources/git/github.com/org/repo
 
 # List facts
-memfuse list-facts
+npx memfuse list-facts
 
 # Store an observation
-memfuse store-observation --tool-name "discovery" --content "Found rate limiter config in gateway/"
+npx memfuse store-observation --tool-name "discovery" --content "Found rate limiter config in gateway/"
 
 # Check system health
-memfuse health
+npx memfuse health
+```
+
+Or install globally for shorter commands:
+
+```bash
+npm install -g @percena/memfuse
+memfuse search --query "auth decisions"
 ```
 
 The Rust CLI (`mfs-cli`) provides ~50 offline/diagnostic commands for direct workspace access when the server is unavailable.
