@@ -542,11 +542,11 @@ The SDK MCP server calls MemFuse Server HTTP API. The mfs-mcp crate calls storag
 # Build server
 cargo build --release -p mfs-server
 
-# Start server (development)
+# Start server (development; repo-local port 18720)
 ./run-server.sh
 
 # Start server (standalone binary)
-./target/release/mfs-server --bind-addr 127.0.0.1:8720 --data-dir ~/.memfuse/data
+./target/release/mfs-server --bind-addr 127.0.0.1:18720 --data-dir ~/.memfuse/data
 
 # Install SDK (in Agent project)
 cd sdk && npm install && npm run build
@@ -675,7 +675,7 @@ CLI + Skill 模式与 MCP 共存，作为 coding agent 的主要交互界面，�
 ┌─── Daemon（持久进程）──────────────────────────────────────────────┐
 │                                                                      │
 │  MemFuse HTTP Server (mfs-server)                                   │
-│  127.0.0.1:8720 (MEMFUSE_SERVER_URL)                               │
+│  127.0.0.1:18720 (MEMFUSE_SERVER_URL)                              │
 │  持有全部 runtime state:                                             │
 │    SQLite metadata + semantic store                                 │
 │    Workspace projection                                             │
@@ -737,7 +737,7 @@ MCP 和 CLI 共享同一个 HTTP server 后端。用户可以选择 MCP 模式�
 |------|------|--------|
 | `--json` | 输出原始 JSON | default 模式 |
 | `--verbose` | 输出完整格式（含 emoji/tips） | default 模式 |
-| `--server <url>` | MemFuse server URL | `MEMFUSE_SERVER_URL` 或 `http://127.0.0.1:8720` |
+| `--server <url>` | MemFuse server URL | `MEMFUSE_SERVER_URL` 或 `http://127.0.0.1:18720` |
 | `--user <id>` | user ID | `MEMFUSE_USER_ID` 或 `$USER` 或 `default` |
 | `--session <id>` | session ID | `MEMFUSE_SESSION_ID` 或 `default` |
 | `--api-key <key>` | API key | `MEMFUSE_API_KEY` 或空 |

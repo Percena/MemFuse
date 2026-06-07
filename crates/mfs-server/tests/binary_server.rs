@@ -32,6 +32,83 @@ async fn wait_for_health(base_url: &str) {
     }
 }
 
+#[test]
+fn binary_server_reports_occupied_bind_addr_without_panic() {
+    let occupied = std::net::TcpListener::bind("127.0.0.1:0").expect("bind occupied port");
+    let bind_addr = occupied
+        .local_addr()
+        .expect("occupied local addr")
+        .to_string();
+    let workspace = tempfile::tempdir().unwrap();
+    let binary = env!("CARGO_BIN_EXE_mfs-server");
+
+    let output = Command::new(binary)
+        .env("MEMFUSE_WORKSPACE_ROOT", workspace.path())
+        .env("MEMFUSE_SOURCE_KIND", "managed")
+        .env("MEMFUSE_BIND_ADDR", &bind_addr)
+        .env("MEMFUSE_SUMMARY_PROVIDER", "deterministic")
+        .env("MEMFUSE_EMBEDDING_PROVIDER", "deterministic")
+        .output()
+        .expect("run mfs-server");
+
+    assert!(!output.status.success(), "server should fail to bind");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("MemFuse server failed to bind {bind_addr}")),
+        "stderr was: {stderr}"
+    );
+    assert!(
+        !stderr.contains("panicked at"),
+        "bind failure should not panic: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn binary_server_reports_existing_pid_lock_without_panic() {
+    let workspace = tempfile::tempdir().unwrap();
+    let first_port = free_local_port();
+    let first_bind_addr = format!("127.0.0.1:{first_port}");
+    let first_base_url = format!("http://{first_bind_addr}");
+    let binary = env!("CARGO_BIN_EXE_mfs-server");
+
+    let first_child = Command::new(binary)
+        .env("MEMFUSE_WORKSPACE_ROOT", workspace.path())
+        .env("MEMFUSE_SOURCE_KIND", "managed")
+        .env("MEMFUSE_BIND_ADDR", &first_bind_addr)
+        .env("MEMFUSE_SUMMARY_PROVIDER", "deterministic")
+        .env("MEMFUSE_EMBEDDING_PROVIDER", "deterministic")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn first mfs-server");
+    let _guard = ChildGuard(first_child);
+    wait_for_health(&first_base_url).await;
+
+    let second_bind_addr = format!("127.0.0.1:{}", free_local_port());
+    let output = Command::new(binary)
+        .env("MEMFUSE_WORKSPACE_ROOT", workspace.path())
+        .env("MEMFUSE_SOURCE_KIND", "managed")
+        .env("MEMFUSE_BIND_ADDR", &second_bind_addr)
+        .env("MEMFUSE_SUMMARY_PROVIDER", "deterministic")
+        .env("MEMFUSE_EMBEDDING_PROVIDER", "deterministic")
+        .output()
+        .expect("run second mfs-server");
+
+    assert!(
+        !output.status.success(),
+        "second server should fail to acquire lock"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("MemFuse server failed to acquire workspace lock"),
+        "stderr was: {stderr}"
+    );
+    assert!(
+        !stderr.contains("panicked at"),
+        "PID lock failure should not panic: {stderr}"
+    );
+}
+
 #[tokio::test]
 async fn binary_server_enables_production_http_layers() {
     let workspace = tempfile::tempdir().unwrap();

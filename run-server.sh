@@ -18,6 +18,9 @@ if [[ -f "$ENV_FILE" ]]; then
     rawline="${rawline%%[[:space:]]}"
     # Validate KEY=VALUE format
     if [[ "$rawline" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      key="${rawline%%=*}"
+      # Let explicit caller-provided environment variables override .env.
+      [[ -n "${!key+x}" ]] && continue
       export "$rawline"
     fi
   done < "$ENV_FILE"
@@ -28,7 +31,7 @@ fi
 # ── Defaults (only set if not already defined) ──────────────────
 : "${MEMFUSE_WORKSPACE_ROOT:=$HOME/.memfuse/data}"
 : "${MEMFUSE_SOURCE_KIND:=managed}"
-: "${MEMFUSE_BIND_ADDR:=127.0.0.1:8720}"
+: "${MEMFUSE_BIND_ADDR:=127.0.0.1:18720}"
 : "${MEMFUSE_ACCOUNT_ID:=default}"
 : "${MEMFUSE_USER_ID:=default}"
 : "${MEMFUSE_AGENT_ID:=default}"
@@ -37,7 +40,7 @@ fi
 : "${MEMFUSE_RETRY_MAX_DELAY_MS:=8000}"
 : "${MEMFUSE_CB_FAILURE_THRESHOLD:=5}"
 : "${MEMFUSE_CB_RESET_TIMEOUT_MS:=300000}"
-: "${MEMFUSE_SERVER_URL:=http://127.0.0.1:8720}"
+: "${MEMFUSE_SERVER_URL:=http://127.0.0.1:18720}"
 
 # ── Expand leading ~ in path env vars ───────────────────────────
 # Neither this .env parser nor the Rust runtime performs tilde

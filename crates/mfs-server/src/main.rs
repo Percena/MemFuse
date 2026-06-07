@@ -1,6 +1,7 @@
 use mfs_server::PidLockGuard;
 use mfs_server::http::build_state;
 use mfs_server::runtime_config::{RuntimeConfig, RuntimeOverrides, render_usage};
+use std::io::ErrorKind;
 use tracing::{error, info, warn};
 
 #[tokio::main]
@@ -38,12 +39,28 @@ async fn main() {
     let workspace_root = runtime_config.app.workspace_root.clone();
 
     // Acquire PID-based data dir lock to prevent multiple instances
-    let _pid_lock = PidLockGuard::acquire(&workspace_root).expect("acquire PID lock");
+    let _pid_lock = PidLockGuard::acquire(&workspace_root).unwrap_or_else(|err| {
+        eprintln!(
+            "MemFuse server failed to acquire workspace lock for {}: {err}",
+            workspace_root.display()
+        );
+        std::process::exit(1);
+    });
 
     let bind_addr = runtime_config.bind_addr.clone();
     let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
-        .expect("bind listener");
+        .unwrap_or_else(|err| {
+            if err.kind() == ErrorKind::AddrInUse {
+                eprintln!(
+                    "MemFuse server failed to bind {bind_addr}: address is already in use.\n\
+                     Stop the process using that port or set MEMFUSE_BIND_ADDR to a free address."
+                );
+            } else {
+                eprintln!("MemFuse server failed to bind {bind_addr}: {err}");
+            }
+            std::process::exit(1);
+        });
 
     info!("Server listening on {}", bind_addr);
     info!("Workspace root: {}", workspace_root.display());

@@ -31,8 +31,8 @@ cargo build --release -p mfs-server && ./target/release/mfs-server
 ### 1. Start the Server
 
 ```bash
-./memfuse-server
-# Verify: curl http://127.0.0.1:8720/health
+./run-server.sh
+# Verify: curl http://127.0.0.1:18720/health
 ```
 
 ### 2. Set Up for Your Agent Platform
@@ -79,7 +79,7 @@ Add to your agent's MCP configuration:
       "command": "npx",
       "args": ["memfuse-mcp"],
       "env": {
-        "MEMFUSE_SERVER_URL": "http://localhost:8720",
+        "MEMFUSE_SERVER_URL": "http://localhost:18720",
         "MEMFUSE_USER_ID": "your-user-id"
       }
     }
@@ -91,7 +91,7 @@ Add to your agent's MCP configuration:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MEMFUSE_SERVER_URL` | `http://127.0.0.1:8720` | MemFuse Server URL |
+| `MEMFUSE_SERVER_URL` | `http://127.0.0.1:18720` | MemFuse Server URL for this source checkout |
 | `MEMFUSE_USER_ID` | `default` | User identifier |
 
 ## Links

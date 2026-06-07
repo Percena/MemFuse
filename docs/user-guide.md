@@ -26,19 +26,21 @@ cargo build --release -p mfs-server
 ./target/release/mfs-server
 ```
 
-Server 默认监听 **8720** 端口：
+源码仓库的 `./run-server.sh` 默认监听 **18720** 端口：
 
 ```bash
-curl http://127.0.0.1:8720/health
+curl http://127.0.0.1:18720/health
 # → {"status":"alive","version":"0.1.0","summary_provider":"openai","embedding_provider":"jina"}
 ```
+
+独立二进制在没有配置文件或环境变量时仍使用内置默认端口 `8720`。
 
 **开发环境变量（`.env` 或 `.env.example`）：**
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `MEMFUSE_WORKSPACE_ROOT` | OS 用户数据目录 | 数据存储根目录；repo 开发时可显式指定 |
-| `MEMFUSE_BIND_ADDR` | `127.0.0.1:8720` | 绑定地址 |
+| `MEMFUSE_BIND_ADDR` | `127.0.0.1:18720` | repo 开发绑定地址 |
 | `MEMFUSE_OPENAI_API_KEY` | — | 启用 LLM 提取（`OPENAI_API_KEY` 也可作为 fallback） |
 | `MEMFUSE_OPENAI_API_BASE` | `https://api.openai.com/v1` | 兼容 LLM 端点（`OPENAI_BASE_URL` 也可作为 fallback） |
 | `MEMFUSE_JINA_API_KEY` | — | 启用语义搜索（可选） |
@@ -60,8 +62,8 @@ cd sdk && npm install && npm run build
 构建后 `memfuse` CLI 命令可用（110 命令，100% HTTP API 覆盖）：
 
 ```bash
-node bin/memfuse.cjs health
-# → Server online (http://127.0.0.1:8720)
+MEMFUSE_SERVER_URL=http://127.0.0.1:18720 node bin/memfuse.cjs health
+# → Server online (http://127.0.0.1:18720)
 ```
 
 ### 安装到 Agent 平台
@@ -402,15 +404,15 @@ memfuse resource-rebuild <resource-id>
 # 导入文档目录（localfs）
 curl -X POST -H "Content-Type: application/json" \
   -d '{"source_kind":"localfs","source_path":"/path/to/docs","logical_name":"my-docs"}' \
-  http://127.0.0.1:8720/resources
+  http://127.0.0.1:18720/resources
 
 # 导入 Git 仓库
 curl -X POST -H "Content-Type: application/json" \
   -d '{"source_kind":"git","source_path":"/path/to/repo","logical_name":"my-project"}' \
-  http://127.0.0.1:8720/resources
+  http://127.0.0.1:18720/resources
 
 # 等待导入完成
-curl "http://127.0.0.1:8720/tasks/{task_key}/wait"
+curl "http://127.0.0.1:18720/tasks/{task_key}/wait"
 ```
 
 ### URI 格式
