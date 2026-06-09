@@ -59,11 +59,9 @@ pub fn startup_runtime_provider_names() -> StartupRuntimeProviderNames {
 mod tests {
     #[test]
     fn startup_runtime_provider_names_auto_detect_llm_keys() {
-        let _guard = mfs_test_util::env_isolated();
-        unsafe {
-            std::env::set_var("MEMFUSE_OPENAI_API_KEY", "test-openai-key");
-            std::env::set_var("MEMFUSE_JINA_API_KEY", "test-jina-key");
-        }
+        let guard = mfs_test_util::env_isolated();
+        guard.set_var("MEMFUSE_OPENAI_API_KEY", "test-openai-key");
+        guard.set_var("MEMFUSE_JINA_API_KEY", "test-jina-key");
 
         let providers = crate::startup_runtime_provider_names();
 

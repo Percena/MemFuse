@@ -230,52 +230,15 @@ mod tests {
     use super::*;
     use crate::providers::ProcessingMode;
 
-    struct EnvGuard {
-        saved: Vec<(&'static str, Option<String>)>,
-    }
-
-    impl EnvGuard {
-        fn new(keys: &[&'static str]) -> Self {
-            let saved = keys
-                .iter()
-                .map(|key| (*key, std::env::var(key).ok()))
-                .collect::<Vec<_>>();
-            for key in keys {
-                unsafe {
-                    std::env::remove_var(key);
-                }
-            }
-            Self { saved }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            for (key, value) in &self.saved {
-                if let Some(value) = value {
-                    unsafe {
-                        std::env::set_var(key, value);
-                    }
-                } else {
-                    unsafe {
-                        std::env::remove_var(key);
-                    }
-                }
-            }
-        }
-    }
-
     #[test]
     fn chat_provider_can_be_forced_to_deterministic() {
-        let _guard = EnvGuard::new(&[
-            "MEMFUSE_CHAT_PROVIDER",
-            "MEMFUSE_OPENAI_API_KEY",
-            "OPENAI_API_KEY",
+        let guard = mfs_test_util::env_with_vars(&[
+            ("MEMFUSE_CHAT_PROVIDER", None),
+            ("MEMFUSE_OPENAI_API_KEY", None),
+            ("OPENAI_API_KEY", None),
         ]);
-        unsafe {
-            std::env::set_var("MEMFUSE_OPENAI_API_KEY", "test-key");
-            std::env::set_var("MEMFUSE_CHAT_PROVIDER", "deterministic");
-        }
+        guard.set_var("MEMFUSE_OPENAI_API_KEY", "test-key");
+        guard.set_var("MEMFUSE_CHAT_PROVIDER", "deterministic");
 
         let provider = chat_provider_from_env();
 

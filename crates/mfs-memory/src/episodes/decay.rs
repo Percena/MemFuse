@@ -189,8 +189,8 @@ pub fn decay_episode_salience(
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
-    #[allow(deprecated)]
     use super::*;
 
     #[test]

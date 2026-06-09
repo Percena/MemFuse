@@ -1612,15 +1612,10 @@ pub(super) fn update_resource_status(metadata: &MetadataStore, resource_id: &str
 #[cfg(test)]
 mod tests {
     use super::AppConfig;
-    use std::ffi::OsString;
-    use std::sync::{LazyLock, Mutex};
-
-    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn app_config_from_env_requires_source_path_for_legacy_source_kinds() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let _env = EnvGuard::set(&[
+        let _env = mfs_test_util::env_with_vars(&[
             ("MEMFUSE_WORKSPACE_ROOT", Some("/tmp/workspace")),
             ("MEMFUSE_SOURCE_KIND", Some("localfs")),
             ("MEMFUSE_SOURCE_PATH", None),
@@ -1636,8 +1631,7 @@ mod tests {
 
     #[test]
     fn app_config_from_env_defaults_to_managed_source_kind() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let _env = EnvGuard::set(&[
+        let _env = mfs_test_util::env_with_vars(&[
             ("MEMFUSE_WORKSPACE_ROOT", Some("/tmp/workspace")),
             ("MEMFUSE_SOURCE_KIND", None),
             ("MEMFUSE_SOURCE_PATH", None),
@@ -1654,8 +1648,7 @@ mod tests {
 
     #[test]
     fn app_config_from_env_allows_missing_source_path_for_managed_mode() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let _env = EnvGuard::set(&[
+        let _env = mfs_test_util::env_with_vars(&[
             ("MEMFUSE_WORKSPACE_ROOT", Some("/tmp/workspace")),
             ("MEMFUSE_SOURCE_KIND", Some("managed")),
             ("MEMFUSE_SOURCE_PATH", None),
@@ -1680,38 +1673,5 @@ mod tests {
             dockerfile.contains("ENV MEMFUSE_SOURCE_KIND=managed"),
             "Docker image must start without MEMFUSE_SOURCE_PATH"
         );
-    }
-
-    struct EnvGuard {
-        saved: Vec<(&'static str, Option<OsString>)>,
-    }
-
-    impl EnvGuard {
-        fn set(vars: &[(&'static str, Option<&str>)]) -> Self {
-            let saved = vars
-                .iter()
-                .map(|(key, _)| (*key, std::env::var_os(key)))
-                .collect();
-
-            for (key, value) in vars {
-                match value {
-                    Some(value) => unsafe { std::env::set_var(key, value) },
-                    None => unsafe { std::env::remove_var(key) },
-                }
-            }
-
-            Self { saved }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            for (key, value) in self.saved.drain(..).rev() {
-                match value {
-                    Some(value) => unsafe { std::env::set_var(key, value) },
-                    None => unsafe { std::env::remove_var(key) },
-                }
-            }
-        }
     }
 }

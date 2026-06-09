@@ -9,7 +9,7 @@ async fn materializes_git_source_into_user_isolated_projection_view() {
     std::fs::create_dir_all(repo.path().join("docs")).unwrap();
     std::fs::write(repo.path().join("docs/guide.md"), "# Git Guide\n").unwrap();
 
-    run_git(repo.path(), &["init"]);
+    run_git(repo.path(), &["init", "--initial-branch", "main"]);
     run_git(repo.path(), &["config", "user.email", "ci@example.com"]);
     run_git(repo.path(), &["config", "user.name", "CI"]);
     run_git(repo.path(), &["add", "."]);

@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "memfuse-server"
-path = "src/main.rs"
+path = "src/bin/memfuse-server.rs"
 
 [features]
 default = []

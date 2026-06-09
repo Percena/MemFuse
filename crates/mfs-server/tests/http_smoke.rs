@@ -1458,12 +1458,10 @@ async fn http_observation_sanitizes_secret_patterns_before_storage() {
 
 #[tokio::test]
 async fn http_rate_limit_returns_429_with_retry_after() {
-    let _env_guard = env_isolated();
-    unsafe {
-        std::env::set_var("MEMFUSE_RATE_LIMIT_ENABLED", "true");
-        std::env::set_var("MEMFUSE_RATE_LIMIT_REQUESTS", "1");
-        std::env::set_var("MEMFUSE_RATE_LIMIT_WINDOW_SECS", "60");
-    }
+    let env_guard = env_isolated();
+    env_guard.set_var("MEMFUSE_RATE_LIMIT_ENABLED", "true");
+    env_guard.set_var("MEMFUSE_RATE_LIMIT_REQUESTS", "1");
+    env_guard.set_var("MEMFUSE_RATE_LIMIT_WINDOW_SECS", "60");
 
     let workspace = tempfile::tempdir().unwrap();
     let source = tempfile::tempdir().unwrap();
@@ -5049,11 +5047,9 @@ async fn setup_read_llm_test_app() -> (
         }
     });
 
-    unsafe {
-        std::env::set_var("MEMFUSE_OPENAI_API_KEY", "test-key");
-        std::env::set_var("MEMFUSE_OPENAI_API_BASE", format!("http://{addr}"));
-        std::env::set_var("MEMFUSE_CHAT_PROVIDER", "openai");
-    }
+    env_guard.set_var("MEMFUSE_OPENAI_API_KEY", "test-key");
+    env_guard.set_var("MEMFUSE_OPENAI_API_BASE", format!("http://{addr}"));
+    env_guard.set_var("MEMFUSE_CHAT_PROVIDER", "openai");
 
     let workspace = tempfile::tempdir().unwrap();
     let source = tempfile::tempdir().unwrap();

@@ -18,6 +18,7 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+mfs-test-util = { path = "../mfs-test-util" }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

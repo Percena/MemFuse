@@ -8,7 +8,7 @@ async fn git_connector_enumerates_head_tree_and_reads_blob_bytes() {
     std::fs::create_dir_all(repo.path().join("docs")).unwrap();
     std::fs::write(repo.path().join("docs/guide.md"), "# Git Fixture\n").unwrap();
 
-    run_git(repo.path(), &["init"]);
+    run_git(repo.path(), &["init", "--initial-branch", "main"]);
     run_git(repo.path(), &["config", "user.email", "ci@example.com"]);
     run_git(repo.path(), &["config", "user.name", "CI"]);
     run_git(repo.path(), &["add", "."]);

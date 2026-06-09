@@ -69,8 +69,35 @@ static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// // ... test code that relies on deterministic providers ...
 /// ```
 pub struct EnvGuard {
-    saved: Vec<(String, Option<String>)>,
+    saved: Vec<(String, Option<OsString>)>,
     _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl EnvGuard {
+    /// Set an environment variable while the global test env lock is held.
+    pub fn set_var<K, V>(&self, key: K, value: V)
+    where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        // SAFETY: EnvGuard holds ENV_LOCK for its full lifetime, serializing
+        // test environment mutations within this process.
+        unsafe {
+            std::env::set_var(key, value);
+        }
+    }
+
+    /// Remove an environment variable while the global test env lock is held.
+    pub fn remove_var<K>(&self, key: K)
+    where
+        K: AsRef<OsStr>,
+    {
+        // SAFETY: EnvGuard holds ENV_LOCK for its full lifetime, serializing
+        // test environment mutations within this process.
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
 }
 
 impl Drop for EnvGuard {
@@ -79,13 +106,9 @@ impl Drop for EnvGuard {
             // SAFETY: ENV_LOCK is still held (we own the guard), so this is
             // safe even under multi-threaded test execution.
             if let Some(v) = val {
-                unsafe {
-                    std::env::set_var(key, v);
-                }
+                self.set_var(key, v);
             } else {
-                unsafe {
-                    std::env::remove_var(key);
-                }
+                self.remove_var(key);
             }
         }
     }
@@ -101,7 +124,7 @@ pub fn env_isolated() -> EnvGuard {
         .iter()
         .map(|key| {
             // SAFETY: ENV_LOCK is held, guaranteeing serial access.
-            let val = std::env::var(key).ok();
+            let val = std::env::var_os(key);
             unsafe {
                 std::env::remove_var(key);
             }
@@ -110,3 +133,24 @@ pub fn env_isolated() -> EnvGuard {
         .collect::<Vec<_>>();
     EnvGuard { saved, _lock: lock }
 }
+
+/// Set or remove the supplied environment variables under the global test env
+/// lock and restore their original values when the guard is dropped.
+pub fn env_with_vars(vars: &[(&str, Option<&str>)]) -> EnvGuard {
+    let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let saved = vars
+        .iter()
+        .map(|(key, _)| ((*key).to_owned(), std::env::var_os(key)))
+        .collect::<Vec<_>>();
+    let guard = EnvGuard { saved, _lock: lock };
+
+    for (key, value) in vars {
+        match value {
+            Some(value) => guard.set_var(key, value),
+            None => guard.remove_var(key),
+        }
+    }
+
+    guard
+}
+use std::ffi::{OsStr, OsString};
