@@ -89,6 +89,15 @@ async fn main() {
 
     let config = runtime_config.app;
     let state = build_state(config);
+    match state.session_engine.recover_pending_redo().await {
+        Ok(recovered) if recovered > 0 => {
+            info!(recovered, "Recovered pending session memory pipeline work");
+        }
+        Ok(_) => {}
+        Err(error) => {
+            warn!(error = %error, "Failed to recover pending session memory pipeline work");
+        }
+    }
     let router = mfs_server::http::app_with_state(state.clone());
 
     // Spawn periodic cross-session consolidation (auto-dream)
@@ -123,6 +132,12 @@ async fn main() {
     for handle in handles {
         let remaining = drain_deadline.saturating_duration_since(tokio::time::Instant::now());
         let _ = tokio::time::timeout(remaining, handle).await;
+    }
+    let remaining = drain_deadline.saturating_duration_since(tokio::time::Instant::now());
+    if !remaining.is_zero() {
+        if let Err(error) = state.session_engine.drain_background_tasks(remaining).await {
+            warn!(error = %error, "Failed to drain session background tasks");
+        }
     }
 
     info!("Server shutdown complete");

@@ -56,10 +56,10 @@ npm install @percena/memfuse
 
 ```bash
 # Claude Code
-npx memfuse-setup install --platform=claude-code
+npx memfuse-setup install --platform=claude-code --server-url=http://127.0.0.1:18720
 
 # Codex
-npx memfuse-setup install --platform=codex
+npx memfuse-setup install --platform=codex --server-url=http://127.0.0.1:18720
 ```
 
 That's it. MemFuse hooks into the agent lifecycle transparently — no explicit "use memfuse" commands needed.

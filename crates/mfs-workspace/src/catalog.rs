@@ -763,7 +763,10 @@ mod tests {
             source_ref: None,
         };
         let uri = canonical_root_uri("git_url", "fallback", &sd);
-        assert_eq!(uri, "mfs://resources/git/github.com/example-org/example-repo");
+        assert_eq!(
+            uri,
+            "mfs://resources/git/github.com/example-org/example-repo"
+        );
     }
 
     #[test]

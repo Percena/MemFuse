@@ -27,6 +27,33 @@ async fn commit_archives_messages_and_enqueues_background_memory_work() {
 }
 
 #[tokio::test]
+async fn commit_background_work_can_be_drained() {
+    let _env_guard = env_isolated();
+    let engine = SessionEngine::for_tests().await.unwrap();
+    let session_id = engine
+        .new_session("acme", "alice", "coding-agent")
+        .await
+        .unwrap();
+    engine
+        .add_message(&session_id, "user", "remember my test command preference")
+        .await
+        .unwrap();
+
+    let result = engine.commit(&session_id).await.unwrap();
+    let drained = engine
+        .drain_background_tasks(Duration::from_secs(5))
+        .await
+        .unwrap();
+    let task = engine
+        .task_status(result.task_id.as_deref().unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(drained, 1);
+    assert_eq!(task.status, TaskStatus::Completed);
+}
+
+#[tokio::test]
 async fn same_user_id_in_different_accounts_gets_distinct_archive_roots() {
     let engine = SessionEngine::for_tests().await.unwrap();
 

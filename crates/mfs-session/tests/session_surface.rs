@@ -53,6 +53,46 @@ async fn get_session_reports_message_and_commit_counts() {
 }
 
 #[tokio::test]
+async fn recreating_existing_session_preserves_live_messages_from_disk() {
+    let workspace = tempfile::tempdir().unwrap();
+    let engine = SessionEngine::open(workspace.path()).await.unwrap();
+    let session_id = engine
+        .new_session_with_id("acme", "alice", "coding-agent", "session-a")
+        .await
+        .unwrap();
+    engine
+        .add_message(&session_id, "user", "message before restart")
+        .await
+        .unwrap();
+    drop(engine);
+
+    let restarted = SessionEngine::open(workspace.path()).await.unwrap();
+    restarted
+        .new_session_with_id("acme", "alice", "coding-agent", "session-a")
+        .await
+        .unwrap();
+    restarted
+        .add_message(&session_id, "assistant", "message after restart")
+        .await
+        .unwrap();
+
+    let context = restarted
+        .get_session_context(&session_id, 128_000)
+        .await
+        .unwrap();
+    let contents = context
+        .messages
+        .iter()
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        contents,
+        vec!["message before restart", "message after restart"]
+    );
+}
+
+#[tokio::test]
 async fn get_session_context_returns_latest_overview_and_messages() {
     let _env_guard = env_isolated();
     let engine = SessionEngine::for_tests().await.unwrap();

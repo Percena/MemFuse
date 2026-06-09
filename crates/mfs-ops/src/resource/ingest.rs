@@ -788,7 +788,8 @@ mod tests {
 
     #[test]
     fn build_zip_url_github_main() {
-        let url = build_zip_archive_url("https://github.com/example-org/example-repo", None).unwrap();
+        let url =
+            build_zip_archive_url("https://github.com/example-org/example-repo", None).unwrap();
         assert_eq!(
             url,
             "https://github.com/example-org/example-repo/archive/refs/heads/main.zip"
@@ -797,7 +798,8 @@ mod tests {
 
     #[test]
     fn build_zip_url_github_branch() {
-        let url = build_zip_archive_url("https://github.com/example-org/example-repo", Some("dev")).unwrap();
+        let url = build_zip_archive_url("https://github.com/example-org/example-repo", Some("dev"))
+            .unwrap();
         assert_eq!(
             url,
             "https://github.com/example-org/example-repo/archive/refs/heads/dev.zip"

@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::memory::{MemoryPipelineJob, MemoryPipelineResult, write_usage_snapshot};
@@ -100,6 +101,7 @@ pub struct SessionEngine {
     workspace_root: PathBuf,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
     tasks: Arc<Mutex<HashMap<String, TaskRecord>>>,
+    background_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     auto_commit_threshold: usize,
     #[cfg(feature = "test-support")]
     _guard: Option<Arc<tempfile::TempDir>>,
@@ -118,6 +120,7 @@ impl SessionEngine {
             workspace_root: workspace_root.into(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             tasks: Arc::new(Mutex::new(HashMap::new())),
+            background_tasks: Arc::new(Mutex::new(Vec::new())),
             auto_commit_threshold,
             #[cfg(feature = "test-support")]
             _guard: None,
@@ -142,6 +145,7 @@ impl SessionEngine {
             workspace_root,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             tasks: Arc::new(Mutex::new(HashMap::new())),
+            background_tasks: Arc::new(Mutex::new(Vec::new())),
             auto_commit_threshold,
             _guard: Some(guard),
         })
@@ -163,6 +167,7 @@ impl SessionEngine {
             workspace_root: workspace_root.to_path_buf(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             tasks: Arc::new(Mutex::new(HashMap::new())),
+            background_tasks: Arc::new(Mutex::new(Vec::new())),
             auto_commit_threshold,
             #[cfg(feature = "test-support")]
             _guard: None,
@@ -201,6 +206,11 @@ impl SessionEngine {
         tokio::fs::create_dir_all(root.join("history"))
             .await
             .map_err(|source| SessionError::io("create session root", &root, source))?;
+        let messages = query::read_live_messages(&root).await?;
+        let estimated_tokens = messages
+            .iter()
+            .map(|message| (message.content.len() / 4).max(1))
+            .sum();
 
         self.sessions.lock().await.insert(
             session_id.to_owned(),
@@ -208,10 +218,10 @@ impl SessionEngine {
                 account_id: account_id.to_owned(),
                 user_id: user_id.to_owned(),
                 agent_id: agent_id.to_owned(),
-                messages: Vec::new(),
+                messages,
                 usage: Vec::new(),
                 archive_count: 0,
-                estimated_tokens: 0,
+                estimated_tokens,
             },
         );
 
@@ -661,7 +671,7 @@ impl SessionEngine {
         };
 
         let spawned_task_id = task_id.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             set_task_status(
                 &workspace_root,
                 &tasks,
@@ -696,11 +706,40 @@ impl SessionEngine {
                 }
             }
         });
+        self.background_tasks.lock().await.push(handle);
 
         Ok(CommitResult {
             archive_uri,
             task_id: Some(task_id),
         })
+    }
+
+    pub async fn drain_background_tasks(&self, timeout: Duration) -> Result<usize, SessionError> {
+        let mut handles = {
+            let mut guard = self.background_tasks.lock().await;
+            guard.drain(..).collect::<Vec<_>>()
+        };
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut drained = 0;
+
+        for handle in &mut handles {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                handle.abort();
+                continue;
+            }
+            match tokio::time::timeout(remaining, &mut *handle).await {
+                Ok(Ok(())) => drained += 1,
+                Ok(Err(error)) => {
+                    return Err(SessionError::IoRaw(std::io::Error::other(
+                        error.to_string(),
+                    )));
+                }
+                Err(_) => handle.abort(),
+            }
+        }
+
+        Ok(drained)
     }
 
     pub fn workspace_root(&self) -> &Path {

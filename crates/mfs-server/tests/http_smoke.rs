@@ -2641,6 +2641,41 @@ async fn http_resources_register_and_list_managed_resources() {
 }
 
 #[tokio::test]
+async fn http_resources_missing_source_path_returns_client_error() {
+    let _env_guard = env_isolated();
+    let workspace = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let app = test_app(&workspace, &source);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/resources")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"source_kind":"localfs","logical_name":"docs"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"]["category"], "InvalidArgument");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("source_path is required")
+    );
+}
+
+#[tokio::test]
 async fn http_resources_persist_orchestrator_business_metadata() {
     let _env_guard = env_isolated();
     let workspace = tempfile::tempdir().unwrap();

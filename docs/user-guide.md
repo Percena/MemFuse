@@ -70,10 +70,10 @@ MEMFUSE_SERVER_URL=http://127.0.0.1:18720 node bin/memfuse.cjs health
 
 ```bash
 # Claude Code（8 hooks + 110 CLI commands + 1 skill + MCP）
-node bin/memfuse-setup.cjs install --platform=claude-code
+node bin/memfuse-setup.cjs install --platform=claude-code --server-url=http://127.0.0.1:18720
 
 # Codex（3 hooks + 110 CLI commands + 1 skill + MCP）
-node bin/memfuse-setup.cjs install --platform=codex
+node bin/memfuse-setup.cjs install --platform=codex --server-url=http://127.0.0.1:18720
 ```
 
 安装后 Agent 自动获得：
@@ -536,7 +536,7 @@ Skill 文件：`sdk/src/skills/memfuse/SKILL.md`（CLI-oriented，含 `allowed-t
 
 更新 Skill：
 ```bash
-cd sdk && npm run build && node bin/memfuse-setup.cjs install --platform=claude-code
+cd sdk && npm run build && node bin/memfuse-setup.cjs install --platform=claude-code --server-url=http://127.0.0.1:18720
 ```
 
 ---
@@ -570,7 +570,8 @@ node bin/memfuse-setup.cjs uninstall --platform=claude-code
 
 **Server 启动失败**
 - 确认 `MEMFUSE_WORKSPACE_ROOT` 已设置且目录存在
-- 确认端口 8720 未被占用
+- 源码仓库的 `./run-server.sh`：确认端口 18720 未被占用
+- 独立二进制/系统服务默认配置：确认端口 8720 未被占用
 
 **Hooks 不触发**
 - Claude Code：确认 `.claude/settings.local.json` 中包含 memfuse hooks

@@ -38,10 +38,7 @@ mod tests {
         // Guard: HOME must be set on the test host (always true on macOS/Linux).
         let home = std::env::var("HOME").unwrap();
         let result = expand_tilde("~/.memfuse/data");
-        assert_eq!(
-            result,
-            PathBuf::from(format!("{}/.memfuse/data", home))
-        );
+        assert_eq!(result, PathBuf::from(format!("{}/.memfuse/data", home)));
     }
 
     #[test]
@@ -68,10 +65,7 @@ mod tests {
         let home = std::env::var("HOME").unwrap();
         let input = PathBuf::from("~/.memfuse/data");
         let result = expand_tilde_path(&input);
-        assert_eq!(
-            result,
-            PathBuf::from(format!("{}/.memfuse/data", home))
-        );
+        assert_eq!(result, PathBuf::from(format!("{}/.memfuse/data", home)));
     }
 
     #[test]

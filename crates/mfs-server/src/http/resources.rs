@@ -66,15 +66,19 @@ pub(super) async fn create_resource(
                     ),
                 }));
             }
+            let source_path = request.source_path.as_deref().ok_or_else(|| {
+                AppError(mfs_types::MfsError::InvalidArgument {
+                    field: "source_path".into(),
+                    reason: "source_path is required when file_name/content are not provided"
+                        .into(),
+                })
+            })?;
             prepare_resource_ingest(
                 &state.metadata,
                 &state.config.workspace_root,
                 &identity,
                 source_kind,
-                request
-                    .source_path
-                    .as_deref()
-                    .expect("source_path required"),
+                source_path,
                 request.logical_name.as_deref(),
                 request.branch.as_deref(),
                 request.revision.as_deref(),

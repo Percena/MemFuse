@@ -39,6 +39,7 @@ export function serviceLayout(options: ServiceOptions = {}): ServiceLayout {
   const home = process.env.HOME || homedir();
   const mfHome = memfuseHome();
   const configHome = process.env.XDG_CONFIG_HOME || join(home, '.config');
+  const userConfigPath = join(configHome, 'memfuse', 'config.toml');
   const serverBin = options.serverBin || process.env.MEMFUSE_SERVER_BIN || 'memfuse-server';
 
   if (platform === 'darwin') {
@@ -69,7 +70,7 @@ export function serviceLayout(options: ServiceOptions = {}): ServiceLayout {
     platform,
     scope,
     servicePath: join(configHome, 'systemd', 'user', 'memfuse.service'),
-    configPath: join(mfHome, 'config.toml'),
+    configPath: userConfigPath,
     dataDir: join(mfHome, 'data'),
     logDir: join(mfHome, 'logs'),
     serverBin,
