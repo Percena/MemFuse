@@ -105,6 +105,11 @@ pub(in crate::http) struct ResolveMemoryContextRequest {
     /// instead of `get_active_facts`, filtering by valid_from/valid_to window.
     /// Example: "2026-04-01T00:00:00Z" returns facts effective on April 1.
     pub at_time: Option<String>,
+    /// Who triggered this recall. `"auto"` (passive hook injection at
+    /// SessionStart / UserPromptSubmit / PreCompact) skips the recall
+    /// reinforcement writeback so the forgetting curve only strengthens on
+    /// explicit retrieval (agent-initiated calls, cite_memories).
+    pub recall_source: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -230,6 +235,7 @@ pub(in crate::http) async fn resolve_memory_context(
         budget: request.token_budget.unwrap_or(DEFAULT_INJECTION_BUDGET),
         strategy,
         at_time: request.at_time.clone(),
+        reinforce_recall: request.recall_source.as_deref() != Some("auto"),
     };
 
     let result = mfs_memory::service::resolve_context(

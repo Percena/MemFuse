@@ -10,7 +10,8 @@ services:
     environment:
       MEMFUSE_WORKSPACE_ROOT: /data/workspace
       MEMFUSE_SOURCE_KIND: ${MEMFUSE_SOURCE_KIND:-managed}
-      MEMFUSE_BIND_ADDR: "0.0.0.0:8720"
+      # Canonical default port is 18720 — override via MEMFUSE_PORT in .env
+      MEMFUSE_BIND_ADDR: "0.0.0.0:${MEMFUSE_PORT:-18720}"
       MEMFUSE_ACCOUNT_ID: ${MEMFUSE_ACCOUNT_ID:-default}
       MEMFUSE_USER_ID: ${MEMFUSE_USER_ID:-default}
       MEMFUSE_AGENT_ID: ${MEMFUSE_AGENT_ID:-default}
@@ -20,7 +21,7 @@ services:
       MEMFUSE_OPENAI_API_KEY: ${MEMFUSE_OPENAI_API_KEY:-}
       MEMFUSE_JINA_API_KEY: ${MEMFUSE_JINA_API_KEY:-}
     ports:
-      - "8720:8720"
+      - "${MEMFUSE_PORT:-18720}:${MEMFUSE_PORT:-18720}"
     volumes:
       - memfuse-data:/data
 

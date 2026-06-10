@@ -205,7 +205,7 @@ curl -X POST http://localhost:18720/v1/memory:search \
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │              MemFuse Server (Rust — single binary)              │
-│                    Port 8720 · 110+ API endpoints               │
+│                    Port 18720 · 110+ API endpoints              │
 │                                                                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
 │  │  Memory      │  │  Retrieval   │  │  Consolidation       │  │

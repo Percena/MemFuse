@@ -20,7 +20,7 @@ COPY --from=build /src/target/release/mfs-server /app/memfuse-server
 
 ENV MEMFUSE_WORKSPACE_ROOT=/data/workspace
 ENV MEMFUSE_SOURCE_KIND=managed
-ENV MEMFUSE_BIND_ADDR=0.0.0.0:8720
+ENV MEMFUSE_BIND_ADDR=0.0.0.0:18720
 
-EXPOSE 8720
+EXPOSE 18720
 ENTRYPOINT ["/app/memfuse-server"]

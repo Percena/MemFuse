@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { installSkill, SKILL_NAMES } from '../skills/loader.js';
 import { httpRequest } from '../shared/http.js';
+import { DEFAULT_SERVER_URL } from '../shared/config.js';
 
 // ─── Configuration helpers ──────────────────────────────────────────────
 
@@ -180,22 +181,78 @@ function mergeJson(file: string, snippet: Record<string, unknown>): void {
     if (typeof snippet[key] === 'object' && !Array.isArray(snippet[key]) && typeof existing[key] === 'object' && !Array.isArray(existing[key])) {
       merged[key] = { ...(existing[key] as Record<string, unknown>), ...(snippet[key] as Record<string, unknown>) };
     }
-    if (key === 'hooks' && Array.isArray(snippet[key]) && Array.isArray(existing[key])) {
-      // Deduplicate hooks by event+cmd signature before concatenating
-      const existingHooks = existing[key] as Array<Record<string, unknown>>;
-      const newHooks = snippet[key] as Array<Record<string, unknown>>;
-      const seen = new Set<string>();
-      for (const h of existingHooks) {
-        seen.add(String(h.event || '') + '|' + JSON.stringify(h.cmd || h.command || ''));
-      }
-      const dedupedNew = newHooks.filter(h => {
-        const sig = String(h.event || '') + '|' + JSON.stringify(h.cmd || h.command || '');
-        return !seen.has(sig);
-      });
-      merged[key] = [...existingHooks, ...dedupedNew];
-    }
   }
   writeFileSync(file, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+}
+
+// ─── Hook config merging (Claude Code & Codex shared object format) ─────
+//
+// Both platforms use the same shape:
+//   hooks: { EventName: [{ matcher?, hooks: [{ type: "command", command, timeout }] }] }
+// (timeout is in seconds).
+
+interface HookGroup {
+  matcher?: string;
+  hooks: Array<Record<string, unknown>>;
+}
+
+function isMemfuseHookCommand(command: unknown): boolean {
+  return /memfuse/i.test(String(command ?? ''));
+}
+
+/**
+ * Merge platform hook groups into a JSON config file without clobbering
+ * user-defined hooks: existing memfuse entries are replaced, everything
+ * else is preserved. Also cleans up the malformed `hooks: [...]` array
+ * format written by older installers (never valid for either platform).
+ */
+function mergeHooksConfig(file: string, newHooks: Record<string, HookGroup[]>): void {
+  let existing: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    try { existing = JSON.parse(readFileSync(file, 'utf-8')); } catch { existing = {}; }
+  }
+  if (Array.isArray(existing.hooks)) {
+    // Legacy malformed format from older memfuse installers — drop it.
+    delete existing.hooks;
+  }
+  const hooks: Record<string, unknown> =
+    existing.hooks && typeof existing.hooks === 'object'
+      ? existing.hooks as Record<string, unknown>
+      : {};
+
+  for (const [event, groups] of Object.entries(newHooks)) {
+    const current = Array.isArray(hooks[event]) ? hooks[event] as HookGroup[] : [];
+    const kept = current
+      .map((group) => ({
+        ...group,
+        hooks: Array.isArray(group.hooks)
+          ? group.hooks.filter((h) => !isMemfuseHookCommand(h.command))
+          : [],
+      }))
+      .filter((group) => group.hooks.length > 0);
+    hooks[event] = [...kept, ...groups];
+  }
+
+  existing.hooks = hooks;
+  writeFileSync(file, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * Build the shell command for a hook script. The platform is passed
+ * explicitly via --platform so hooks never need to guess the host from
+ * payload heuristics; server URL and user id are inlined as env vars so
+ * the values chosen at install time reach the hook process.
+ */
+function buildHookCommand(
+  hooksDir: string,
+  script: string,
+  platform: 'claude-code' | 'codex',
+  envVars: Record<string, string>,
+): string {
+  const envPrefix = Object.entries(envVars)
+    .map(([k, v]) => `${k}="${v.replace(/"/g, '\\"')}"`)
+    .join(' ');
+  return `${envPrefix} node "${join(hooksDir, script)}" --platform=${platform}`;
 }
 
 /** Try to add MCP server via CLI command, return true if succeeded */
@@ -237,7 +294,7 @@ export async function runSetup(args: string[]): Promise<void> {
     else { console.error(`Unknown argument: ${arg}`); process.exit(1); }
   }
 
-  const serverUrl = options.serverUrl || process.env.MEMFUSE_SERVER_URL || 'http://127.0.0.1:8720';
+  const serverUrl = options.serverUrl || process.env.MEMFUSE_SERVER_URL || DEFAULT_SERVER_URL;
   const userId = options.userId || process.env.MEMFUSE_USER_ID || process.env.USER || 'default';
 
   console.log('MemFuse Install');
@@ -292,24 +349,30 @@ async function installClaudeCode(projectDir: string, serverUrl: string, userId: 
     console.log('  ⊘ MCP registration skipped (--no-mcp)');
   }
 
-  // 2. Hooks
+  // 2. Hooks — Claude Code settings schema:
+  //    hooks: { EventName: [{ matcher?, hooks: [{ type: "command", command, timeout }] }] }
   if (doHooks) {
     mkdirSync(claudeDir, { recursive: true });
     const settingsFile = join(claudeDir, 'settings.local.json');
     ensureJsonFile(settingsFile);
-    mergeJson(settingsFile, {
-      hooks: [
-        { event: 'SessionStart', cmd: ['node', join(hooksDir, 'session-start.cjs')], timeout: 15 },
-        { event: 'PostToolUse', cmd: ['node', join(hooksDir, 'post-tool-use.cjs')] },
-        { event: 'PreToolUse', matcher: 'Read', cmd: ['node', join(hooksDir, 'pre-tool-use.cjs')], timeout: 3 },
-        { event: 'Stop', cmd: ['node', join(hooksDir, 'stop.cjs')], timeout: 10 },
-        { event: 'PreCompact', cmd: ['node', join(hooksDir, 'pre-compact.cjs')], timeout: 10 },
-        { event: 'SessionEnd', cmd: ['node', join(hooksDir, 'session-end.cjs')] },
-        { event: 'UserPromptSubmit', cmd: ['node', join(hooksDir, 'user-prompt-submit.cjs')], timeout: 3 },
-        { event: 'Setup', cmd: ['node', join(hooksDir, 'setup.cjs')] },
-      ],
+    const hook = (script: string, timeout: number): Record<string, unknown> => ({
+      type: 'command',
+      command: buildHookCommand(hooksDir, script, 'claude-code', envVars),
+      timeout,
     });
-    console.log('  ✓ Hooks configured (SessionStart, PostToolUse, PreToolUse[Read], Stop, PreCompact, SessionEnd, UserPromptSubmit, Setup)');
+    mergeHooksConfig(settingsFile, {
+      SessionStart: [{ hooks: [hook('session-start.cjs', 15)] }],
+      UserPromptSubmit: [{ hooks: [hook('user-prompt-submit.cjs', 5)] }],
+      PreToolUse: [{ matcher: 'Read', hooks: [hook('pre-tool-use.cjs', 5)] }],
+      PostToolUse: [{ hooks: [hook('post-tool-use.cjs', 15)] }],
+      Stop: [{ hooks: [hook('stop.cjs', 10)] }],
+      PreCompact: [{ hooks: [hook('pre-compact.cjs', 10)] }],
+      SessionEnd: [{ hooks: [hook('session-end.cjs', 10)] }],
+      // Setup only fires on `claude --init-only` / `-p --init|--maintenance`;
+      // used as an installation-time health probe.
+      Setup: [{ hooks: [hook('setup.cjs', 10)] }],
+    });
+    console.log('  ✓ Hooks configured (SessionStart, UserPromptSubmit, PreToolUse[Read], PostToolUse, Stop, PreCompact, SessionEnd, Setup)');
   } else {
     console.log('  ⊘ Hooks skipped (--skills only)');
   }
@@ -372,33 +435,34 @@ async function installCodex(projectDir: string, serverUrl: string, userId: strin
       {
         eventName: 'SessionStart',
         matcher: 'startup|resume|clear|compact',
-        command: `node ${join(hooksDir, 'session-start.cjs')}`,
+        command: buildHookCommand(hooksDir, 'session-start.cjs', 'codex', envVars),
         timeout: 15,
       },
       {
         eventName: 'PostToolUse',
         matcher: 'Bash|Read|Edit|Write|MultiEdit|Glob|Grep|mcp__.*',
-        command: `node ${join(hooksDir, 'post-tool-use.cjs')}`,
+        command: buildHookCommand(hooksDir, 'post-tool-use.cjs', 'codex', envVars),
         timeout: 15,
       },
       {
         eventName: 'Stop',
-        command: `node ${join(hooksDir, 'stop.cjs')}`,
+        command: buildHookCommand(hooksDir, 'stop.cjs', 'codex', envVars),
         timeout: 10,
       },
     ];
     ensureJsonFile(hooksFile);
-    mergeJson(hooksFile, {
-      hooks: {
-        SessionStart: [{ matcher: hookSpecs[0].matcher, hooks: [{ type: 'command', command: hookSpecs[0].command, timeout: hookSpecs[0].timeout }] }],
-        PostToolUse: [{ matcher: hookSpecs[1].matcher, hooks: [{ type: 'command', command: hookSpecs[1].command, timeout: hookSpecs[1].timeout }] }],
-        Stop: [{ hooks: [{ type: 'command', command: hookSpecs[2].command, timeout: hookSpecs[2].timeout }] }],
-      },
+    mergeHooksConfig(hooksFile, {
+      SessionStart: [{ matcher: hookSpecs[0].matcher, hooks: [{ type: 'command', command: hookSpecs[0].command, timeout: hookSpecs[0].timeout }] }],
+      PostToolUse: [{ matcher: hookSpecs[1].matcher, hooks: [{ type: 'command', command: hookSpecs[1].command, timeout: hookSpecs[1].timeout }] }],
+      Stop: [{ hooks: [{ type: 'command', command: hookSpecs[2].command, timeout: hookSpecs[2].timeout }] }],
     });
     const codexConfigFile = join(getCodexHome(), 'config.toml');
     writeCodexHookTrustConfig(codexConfigFile, hooksFile, hookSpecs);
     console.log('  ✓ Hooks configured (SessionStart, PostToolUse[Bash/Read/Edit/Write/Glob/Grep/MCP], Stop)');
     console.log(`  ✓ Codex hooks enabled and trusted in ${codexConfigFile}`);
+    console.log('  ⚠ Note: lifecycle hooks require a Codex build with hooks support');
+    console.log('    ([features] hooks). On Codex CLIs without hooks, MemFuse still works');
+    console.log('    in MCP + Skill mode — call resolve_context / store_observation explicitly.');
   } else {
     console.log('  ⊘ Hooks skipped (--skills only)');
   }

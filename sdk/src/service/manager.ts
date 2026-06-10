@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { loadConfig, memfuseHome } from '../shared/config.js';
+import { DEFAULT_BIND_ADDR, DEFAULT_SERVER_URL, loadConfig, memfuseHome } from '../shared/config.js';
 import { httpRequest } from '../shared/http.js';
 
 export type ServicePlatform = 'darwin' | 'linux' | 'manual';
@@ -157,10 +157,10 @@ export function renderLaunchAgent(layout: ServiceLayout): string {
 }
 
 export function renderDefaultConfig(layout: ServiceLayout): string {
-  const serverUrl = 'http://127.0.0.1:8720';
+  const serverUrl = DEFAULT_SERVER_URL;
   return `[server]
 profile = "development"
-bind_addr = "127.0.0.1:8720"
+bind_addr = "${DEFAULT_BIND_ADDR}"
 auth_mode = "dev"
 allow_insecure_bind = false
 shutdown_timeout_ms = 30000

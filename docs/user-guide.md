@@ -33,7 +33,7 @@ curl http://127.0.0.1:18720/health
 # → {"status":"alive","version":"0.1.0","summary_provider":"openai","embedding_provider":"jina"}
 ```
 
-独立二进制在没有配置文件或环境变量时仍使用内置默认端口 `8720`。
+独立二进制、系统服务与源码仓库现统一使用内置默认端口 `18720`（唯一事实来源：Rust `mfs-types`、TypeScript `sdk/src/shared/config.ts`）。运行时通过 `.env` / 环境变量中的 `MEMFUSE_BIND_ADDR`、`MEMFUSE_SERVER_URL` 覆盖，无需改源码。
 
 **开发环境变量（`.env` 或 `.env.example`）：**
 
@@ -571,7 +571,7 @@ node bin/memfuse-setup.cjs uninstall --platform=claude-code
 **Server 启动失败**
 - 确认 `MEMFUSE_WORKSPACE_ROOT` 已设置且目录存在
 - 源码仓库的 `./run-server.sh`：确认端口 18720 未被占用
-- 独立二进制/系统服务默认配置：确认端口 8720 未被占用
+- 独立二进制/系统服务：同样默认 18720（可通过 `MEMFUSE_BIND_ADDR` 更换）
 
 **Hooks 不触发**
 - Claude Code：确认 `.claude/settings.local.json` 中包含 memfuse hooks

@@ -26,8 +26,11 @@ export default async function run(): Promise<void> {
     let contextResult: Record<string, unknown>;
     try {
       const query = buildSessionStartQuery(input);
+      // recall_source=auto: passive injection must not inflate recall_count
+      // (reinforcement is reserved for explicit retrieval / cite_memories).
       contextResult = await callBackend('POST', PATHS.CONTEXT_RESOLVE, {
         user_id: userId, session_id: sessionId, query, token_budget: 1500,
+        recall_source: 'auto',
       }, router) as Record<string, unknown>;
     } catch (err) {
       const level = isDegradableError(err) ? 'degraded' : 'error';

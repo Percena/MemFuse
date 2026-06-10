@@ -9,15 +9,13 @@
 # === Rust ===
 /target/
 **/*.rs.bk
-Cargo.lock
 
 # === Node / TypeScript ===
 node_modules/
 dist/
 *.tsbuildinfo
 
-# === SDK build artifacts ===
-sdk/bin/
+# sdk/bin/ contains committed CJS entry wrappers (package.json "bin") — not ignored.
 
 # === Project-specific ===
 .worktrees/

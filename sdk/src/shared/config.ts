@@ -10,6 +10,19 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+/**
+ * Canonical default port for the MemFuse server.
+ *
+ * Single source of truth on the TypeScript side — every SDK component
+ * (hooks, MCP server, CLI, installer, service manager) must reference this
+ * constant instead of hardcoding a port. At runtime the value is always
+ * overridable via MEMFUSE_SERVER_URL (environment / .env) or
+ * ~/.memfuse/config.toml. The Rust counterpart lives in mfs-types.
+ */
+export const DEFAULT_PORT = 18720;
+export const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
+export const DEFAULT_BIND_ADDR = `127.0.0.1:${DEFAULT_PORT}`;
+
 export interface MemFuseConfig {
   /** Primary server URL (backward compatible, used when cloudUrl/localCanvasUrl not set) */
   serverUrl: string;
@@ -38,7 +51,7 @@ export function loadConfig(configPath?: string): MemFuseConfig {
   const fileConfig = loadFileConfig(configPath);
   const serverUrl = process.env.MEMFUSE_SERVER_URL
     || fileConfig.client?.server_url
-    || 'http://127.0.0.1:8720';
+    || DEFAULT_SERVER_URL;
   return {
     serverUrl,
     cloudUrl: process.env.MEMFUSE_CLOUD_URL || fileConfig.client?.cloud_url || serverUrl,

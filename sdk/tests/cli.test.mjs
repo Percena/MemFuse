@@ -654,7 +654,7 @@ describe('CLI Bin Entry Point', () => {
     assert.match(unit, /ExecStart=\/opt\/memfuse\/bin\/memfuse-server --config/);
     assert.match(unit, /Restart=on-failure/);
     assert.match(config, /\[client\]/);
-    assert.match(config, /server_url = "http:\/\/127\.0\.0\.1:8720"/);
+    assert.match(config, /server_url = "http:\/\/127\.0\.0\.1:18720"/);
   });
 
   it('service doctor reports binary, config, data dir, and health status', async () => {

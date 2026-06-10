@@ -8,7 +8,7 @@
  * See docs/architecture.md §10 CLI Architecture for full design specification.
  */
 
-import { loadConfig, MemFuseConfig } from '../shared/config.js';
+import { DEFAULT_SERVER_URL, loadConfig, MemFuseConfig } from '../shared/config.js';
 import { OutputMode } from './output.js';
 import { CliArgs, RegisterFn } from './types.js';
 import { registerCoreCommands } from './commands/core.js';
@@ -307,7 +307,7 @@ Setup:
 Global options:
   --json                      Raw JSON output (matches HTTP API response format)
   --verbose                   Full markdown output (with emoji, tips)
-  --server <url>              Server URL (default: MEMFUSE_SERVER_URL or http://127.0.0.1:8720)
+  --server <url>              Server URL (default: MEMFUSE_SERVER_URL or ${DEFAULT_SERVER_URL})
   --user <id>                 User ID (default: MEMFUSE_USER_ID or $USER)
   --session <id>              Session ID (default: MEMFUSE_SESSION_ID or MEMFUSE_THREAD_ID or 'default')
   --api-key <key>             API key (default: MEMFUSE_API_KEY)

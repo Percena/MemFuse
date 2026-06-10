@@ -300,7 +300,7 @@ impl Default for RawSettings {
     fn default() -> Self {
         Self {
             profile: "development".to_owned(),
-            bind_addr: "127.0.0.1:8720".to_owned(),
+            bind_addr: mfs_types::DEFAULT_BIND_ADDR.to_owned(),
             data_dir: default_data_dir(),
             source_kind: "managed".to_owned(),
             source_path: None,

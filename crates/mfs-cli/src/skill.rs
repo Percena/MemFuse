@@ -11,7 +11,7 @@
 //!
 //! Changes made during deprecation pass (2026-05-06):
 //! - Skill name: `mfs-query` → `memfuse-offline` (avoid collision with SDK skill)
-//! - Default port: 3000 → 8720 (consistency with actual server)
+//! - Default port: now sourced from `mfs_types::DEFAULT_SERVER_URL` (consistency with actual server)
 //! - Added deprecation warning in generated SKILL.md
 
 use clap::{Subcommand, ValueEnum};
@@ -184,7 +184,7 @@ Round 3:
 
 fn build_shell_template() -> String {
     format!(
-        r#"export MEMFUSE_SERVER_URL=http://127.0.0.1:8720
+        r#"export MEMFUSE_SERVER_URL={default_server_url}
 export MEMFUSE_TARGET_URI={DEFAULT_TARGET_URI}
 
 # broad semantic retrieval
@@ -217,7 +217,8 @@ curl --get "$MEMFUSE_SERVER_URL/tree" \
 # inspect a file result
 curl --get "$MEMFUSE_SERVER_URL/read" \
   --data-urlencode "uri=$MEMFUSE_NARROW_URI/<path/to/file.md>"
-"#
+"#,
+        default_server_url = mfs_types::DEFAULT_SERVER_URL,
     )
 }
 

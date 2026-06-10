@@ -130,9 +130,12 @@ export async function callServerWithUrl(
  * Call the appropriate backend based on operation type (B1).
  *
  * Routes Canvas operations to localCanvasUrl, everything else to cloudUrl.
- * Includes offline degradation:
+ * Offline behavior:
  *   - Canvas Daemon offline → stale snapshot from cloud (read-only) or unavailable (writes)
- *   - Cloud API offline → Canvas still works locally, others return degraded response
+ *   - Non-canvas backend offline → the MemFuseNetworkError is RETHROWN.
+ *     Callers (hooks, MCP, CLI) must handle it — returning a fabricated
+ *     success object here would silently drop writes and make "server down"
+ *     indistinguishable from "no memories" (see docs/review P0-4).
  *
  * @param method HTTP method
  * @param path API path
@@ -194,13 +197,10 @@ export async function callBackend(
       }
     }
 
-    // Cloud API offline → Canvas still works, others degraded
-    console.warn('[MemFuse] Cloud API offline, returning offline response');
-    return {
-      status: 'unavailable',
-      hint: 'Cloud service unavailable. Canvas data is still available locally.',
-      freshness: 'offline',
-    };
+    // Non-canvas backend offline → propagate the network error so callers
+    // can degrade explicitly (hooks log to stderr and exit 0; MCP/CLI surface
+    // the failure to the agent/user). Never fabricate a success payload.
+    throw err;
   }
 }
 

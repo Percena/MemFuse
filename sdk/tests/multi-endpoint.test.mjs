@@ -29,7 +29,7 @@ describe('Config: multi-endpoint defaults', () => {
       const { loadConfig } = await import('../dist/shared/config.js?t=' + Date.now());
       const config = loadConfig();
       assert.equal(config.cloudUrl, config.serverUrl, 'cloudUrl should default to serverUrl');
-      assert.equal(config.cloudUrl, 'http://127.0.0.1:8720');
+      assert.equal(config.cloudUrl, 'http://127.0.0.1:18720');
     } finally {
       if (origServer !== undefined) process.env.MEMFUSE_SERVER_URL = origServer;
       else delete process.env.MEMFUSE_SERVER_URL;
@@ -48,7 +48,7 @@ describe('Config: multi-endpoint defaults', () => {
       const { loadConfig } = await import('../dist/shared/config.js?t=' + Date.now());
       const config = loadConfig();
       assert.equal(config.localCanvasUrl, config.serverUrl, 'localCanvasUrl should default to serverUrl');
-      assert.equal(config.localCanvasUrl, 'http://127.0.0.1:8720');
+      assert.equal(config.localCanvasUrl, 'http://127.0.0.1:18720');
     } finally {
       if (origServer !== undefined) process.env.MEMFUSE_SERVER_URL = origServer;
       else delete process.env.MEMFUSE_SERVER_URL;
@@ -81,7 +81,7 @@ describe('Config: multi-endpoint defaults', () => {
       const { loadConfig } = await import('../dist/shared/config.js?t=' + Date.now());
       const config = loadConfig();
       assert.equal(config.cloudUrl, 'https://cloud.memfuse.io');
-      assert.equal(config.serverUrl, 'http://127.0.0.1:8720', 'serverUrl stays default');
+      assert.equal(config.serverUrl, 'http://127.0.0.1:18720', 'serverUrl stays default');
       assert.notEqual(config.cloudUrl, config.serverUrl, 'cloudUrl differs from serverUrl');
     } finally {
       if (origServer !== undefined) process.env.MEMFUSE_SERVER_URL = origServer;
@@ -101,7 +101,7 @@ describe('Config: multi-endpoint defaults', () => {
       const { loadConfig } = await import('../dist/shared/config.js?t=' + Date.now());
       const config = loadConfig();
       assert.equal(config.localCanvasUrl, 'http://localhost:8721');
-      assert.equal(config.serverUrl, 'http://127.0.0.1:8720', 'serverUrl stays default');
+      assert.equal(config.serverUrl, 'http://127.0.0.1:18720', 'serverUrl stays default');
       assert.notEqual(config.localCanvasUrl, config.serverUrl, 'localCanvasUrl differs from serverUrl');
     } finally {
       if (origServer !== undefined) process.env.MEMFUSE_SERVER_URL = origServer;

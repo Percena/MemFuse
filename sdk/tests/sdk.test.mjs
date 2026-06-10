@@ -1226,7 +1226,7 @@ describe('Config', () => {
   it('loads default config', async () => {
     const { loadConfig } = await import('../dist/shared/config.js');
     const config = loadConfig();
-    assert.equal(config.serverUrl, 'http://127.0.0.1:8720');
+    assert.equal(config.serverUrl, 'http://127.0.0.1:18720');
     assert.equal(config.userId, process.env.MEMFUSE_USER_ID || process.env.USER || 'default');
     assert.equal(config.sessionId, '');
   });

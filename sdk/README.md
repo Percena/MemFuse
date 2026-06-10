@@ -91,7 +91,7 @@ Add to your agent's MCP configuration:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MEMFUSE_SERVER_URL` | `http://127.0.0.1:8720` | MemFuse Server URL; use `http://127.0.0.1:18720` for this source checkout |
+| `MEMFUSE_SERVER_URL` | `http://127.0.0.1:18720` | MemFuse Server URL (canonical default everywhere) |
 | `MEMFUSE_USER_ID` | `default` | User identifier |
 
 ## Links

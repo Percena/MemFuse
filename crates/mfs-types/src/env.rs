@@ -1,5 +1,21 @@
 use std::path::PathBuf;
 
+/// Canonical default port for the MemFuse server.
+///
+/// Single source of truth on the Rust side — every crate (server runtime
+/// config, CLI, docs templates) must reference these constants instead of
+/// hardcoding a port. At runtime the value is always overridable via
+/// `MEMFUSE_BIND_ADDR` / `MEMFUSE_SERVER_URL` (environment / `.env` /
+/// `config.toml`). The TypeScript counterpart lives in
+/// `sdk/src/shared/config.ts`.
+pub const DEFAULT_PORT: u16 = 18720;
+
+/// Canonical default bind address (`127.0.0.1:{DEFAULT_PORT}`).
+pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1:18720";
+
+/// Canonical default server URL (`http://{DEFAULT_BIND_ADDR}`).
+pub const DEFAULT_SERVER_URL: &str = "http://127.0.0.1:18720";
+
 /// Expand a leading `~` in a string to the value of `$HOME`.
 ///
 /// Neither `dotenvy` nor Rust's `PathBuf` perform shell tilde expansion,
@@ -32,6 +48,12 @@ pub fn expand_tilde_path(path: &std::path::Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_endpoint_constants_are_consistent() {
+        assert_eq!(DEFAULT_BIND_ADDR, format!("127.0.0.1:{DEFAULT_PORT}"));
+        assert_eq!(DEFAULT_SERVER_URL, format!("http://{DEFAULT_BIND_ADDR}"));
+    }
 
     #[test]
     fn expands_tilde_slash() {

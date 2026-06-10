@@ -30,6 +30,11 @@ export const EXIT_FATAL = 2;
 
 export function isDegradableError(err: unknown): boolean {
   if (!err) return false;
+  // MemFuseNetworkError with status 0 = backend unreachable → degradable.
+  if (err instanceof Error && err.name === 'MemFuseNetworkError') {
+    const status = (err as Error & { status?: number }).status;
+    if (status === 0) return true;
+  }
   const msg = err instanceof Error ? err.message : '';
   if (msg.includes('ECONNREFUSED') || msg.includes('ECONNRESET') ||
       msg.includes('ETIMEDOUT') || msg.includes('ENOTFOUND') ||
@@ -45,7 +50,26 @@ export function isDegradableError(err: unknown): boolean {
 
 export type Platform = 'claude-code' | 'codex';
 
+/**
+ * Explicit platform from `--platform=<p>` argv (written by the installer
+ * into every hook command) or MEMFUSE_PLATFORM env. This is authoritative;
+ * payload-shape heuristics (`detectPlatform`) are only a fallback — e.g.
+ * Claude Code's Bash tool_input is `{command}` and would otherwise be
+ * misclassified as Codex.
+ */
+export function platformFromArgv(): Platform | undefined {
+  for (const arg of process.argv.slice(2)) {
+    if (arg === '--platform=claude-code') return 'claude-code';
+    if (arg === '--platform=codex') return 'codex';
+  }
+  const env = process.env.MEMFUSE_PLATFORM;
+  if (env === 'claude-code' || env === 'codex') return env;
+  return undefined;
+}
+
 export function detectPlatform(input: Record<string, unknown>): Platform {
+  const explicit = platformFromArgv();
+  if (explicit) return explicit;
   if (input.tool_input && typeof input.tool_input === 'object' && (input.tool_input as Record<string, unknown>).command) {
     return 'codex';
   }
@@ -109,7 +133,10 @@ export function adaptInput(rawInput: Record<string, unknown>): AdaptedInput {
       : String(rawInput.tool_input || '');
     input.tool_output = String(rawInput.tool_output || rawInput.tool_response || '');
     input.prompt = String(rawInput.prompt || '');
-    input.last_assistant_message = String(rawInput.last_assistant_message || '');
+    // Claude Code's Stop event delivers the final response as `assistant_message`.
+    input.last_assistant_message = String(
+      rawInput.last_assistant_message || rawInput.assistant_message || '',
+    );
   }
 
   return input;
@@ -128,9 +155,21 @@ export function formatOutput(platform: Platform, eventName: string, content: str
         additionalContext: content,
       },
     });
-  } else {
-    return content;
   }
+  // Claude Code: PreToolUse plain stdout is NOT injected into model context
+  // (only SessionStart / UserPromptSubmit / PostToolUse support plain-text
+  // injection). Use JSON additionalContext instead. Deliberately no
+  // `permissionDecision` — memory hints must never bypass the user's
+  // permission flow for the underlying tool call.
+  if (eventName === 'PreToolUse') {
+    return JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        additionalContext: content,
+      },
+    });
+  }
+  return content;
 }
 
 // ─── API Paths (aligned with Rust Server routes) ────────────────────────

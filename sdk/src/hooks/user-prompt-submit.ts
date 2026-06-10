@@ -42,6 +42,7 @@ export default async function run(): Promise<void> {
         session_id: sessionId,
         query: truncate(promptText, 200),
         token_budget: 500,
+        recall_source: 'auto',
       }, router) as Record<string, unknown>;
     } catch (err) {
       // Silent failure — mid-session signals are supplementary, not critical

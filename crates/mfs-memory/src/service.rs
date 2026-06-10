@@ -37,6 +37,11 @@ pub struct ResolveContextInput {
     pub strategy: SearchStrategy,
     /// Point-in-time temporal query (ISO-8601 timestamp).
     pub at_time: Option<String>,
+    /// Whether this recall should reinforce memory strength
+    /// (increment recall_count / last_recalled_at and append access log).
+    /// False for passive hook injections (recall_source = "auto") so the
+    /// forgetting curve only strengthens on explicit retrieval.
+    pub reinforce_recall: bool,
 }
 
 /// Output of `resolve_context` — everything the handler needs except
@@ -175,9 +180,19 @@ pub async fn resolve_context(
     };
     let rendered_markdown = render_memory_injection(&context_response);
 
-    // Step 16: Write recall statistics and access log.
-    writeback_recall_and_access_log(metadata, &final_facts, &final_episodes, account_id, user_id)
+    // Step 16: Write recall statistics and access log — only for explicit
+    // recalls. Passive hook injections (every prompt) must not inflate
+    // reinforcement, or decay semantics become meaningless.
+    if input.reinforce_recall {
+        writeback_recall_and_access_log(
+            metadata,
+            &final_facts,
+            &final_episodes,
+            account_id,
+            user_id,
+        )
         .map_err(|e| e.to_string())?;
+    }
 
     Ok(ResolveContextOutput {
         sections,

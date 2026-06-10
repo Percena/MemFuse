@@ -29,6 +29,7 @@ export default async function run(): Promise<void> {
         session_id: sessionId,
         query: 'pre-compact context snapshot current session memory',
         token_budget: 3000,
+        recall_source: 'auto',
       }, router);
     } catch (err) {
       const level = isDegradableError(err) ? 'degraded' : 'error';

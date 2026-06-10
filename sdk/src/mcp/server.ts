@@ -233,10 +233,11 @@ server.registerTool('resolve_context', {
     budget: z.number().default(1500).describe('Token budget (default: 1500). Higher budgets return more detail.'),
     strategy: z.enum(['precision', 'diverse', 'recent', 'comprehensive']).default('precision').describe('Search strategy: precision (default, relevance-only), diverse (relevance+MMR diversity reranking), recent (enhanced recency boost), comprehensive (budget×2 for maximum recall)'),
     at_time: z.string().optional().describe('Point-in-time query (ISO 8601): return facts that were effective at this timestamp. Example: "2026-04-01T00:00:00Z" returns facts valid on April 1.'),
+    session_id: z.string().optional().describe('Session ID to scope the overlay (recent unconsolidated turns). Pass the host session ID so MCP calls and lifecycle hooks share the same session.'),
   }),
-}, async ({ query, budget, strategy, at_time }) => {
+}, async ({ query, budget, strategy, at_time, session_id }) => {
   try {
-    const sessionId = config.sessionId || 'default';
+    const sessionId = session_id || config.sessionId || 'default';
     const result = await callBackend('POST', PATHS.CONTEXT_RESOLVE, {
       user_id: config.userId, session_id: sessionId, query, token_budget: budget ?? 1500, strategy, at_time,
     }, router) as Record<string, unknown>;
@@ -309,11 +310,12 @@ server.registerTool('inject_context', {
     query: z.string().describe('Query or scenario to resolve context for'),
     budget: z.number().default(1500).describe('Token budget (default: 1500)'),
     strategy: z.enum(['precision', 'diverse', 'recent', 'comprehensive']).default('precision').describe('Search strategy preset'),
+    session_id: z.string().optional().describe('Session ID to scope the overlay (defaults to MEMFUSE_SESSION_ID or "default")'),
   }),
-}, async ({ query, budget, strategy }) => {
+}, async ({ query, budget, strategy, session_id }) => {
   try {
     // Delegate to resolve_context handler
-    const sessionId = config.sessionId || 'default';
+    const sessionId = session_id || config.sessionId || 'default';
     const result = await callBackend('POST', PATHS.CONTEXT_RESOLVE, {
       user_id: config.userId, session_id: sessionId, query, token_budget: budget ?? 1500, strategy,
     }, router) as Record<string, unknown>;
@@ -431,13 +433,14 @@ server.registerTool('store_observation', {
     tool_output: z.string().optional().describe('Output or result of the observation'),
     content: z.string().optional().describe('Full observation content (optional, auto-generated if not provided)'),
     metadata: z.record(z.string(), z.unknown()).optional().describe('Structured metadata (tool_type, summary, outcome, etc.)'),
+    session_id: z.string().optional().describe('Session ID to store the observation in. Pass the host session ID so MCP writes and hook-captured observations land in the same session.'),
   }),
-}, async ({ tool_name, tool_input, tool_output, content, metadata }) => {
+}, async ({ tool_name, tool_input, tool_output, content, metadata, session_id }) => {
   try {
     const safeInput = sanitizeMemoryText(tool_input || '');
     const safeOutput = sanitizeMemoryText(tool_output || '');
     const obsContent = sanitizeMemoryText(content || buildContent(tool_name, safeInput, safeOutput));
-    const sessionId = config.sessionId || 'default';
+    const sessionId = session_id || config.sessionId || 'default';
 
     // POST /sessions/{sessionId}/observations
     const result = await callBackend('POST', `${PATHS.OBSERVE}/${sessionId}/observations`, {
@@ -517,10 +520,11 @@ server.registerTool('commit_session', {
   description: 'Commit the current session to trigger memory consolidation. This archives session messages and runs the background memory pipeline to extract episodes and facts. Use this when you want to ensure your session observations are consolidated into persistent memory, especially on Codex which lacks a SessionEnd event.',
   inputSchema: z.object({
     reason: z.string().optional().describe('Optional reason for the commit (e.g., "end of task", "manual checkpoint")'),
+    session_id: z.string().optional().describe('Session ID to commit (defaults to MEMFUSE_SESSION_ID or "default")'),
   }),
-}, async ({ reason }) => {
+}, async ({ reason, session_id }) => {
   try {
-    const sessionId = config.sessionId || 'default';
+    const sessionId = session_id || config.sessionId || 'default';
 
     // POST /sessions/{sessionId}/commit
     const result = await callBackend('POST', `${PATHS.CONSOLIDATE}/${sessionId}/commit`, {

@@ -41,7 +41,7 @@ function removeFromJson(file: string): void {
     if (Object.keys(config.mcpServers as Record<string, unknown>).length === 0) delete config.mcpServers;
   }
 
-  // Remove memfuse hooks (Claude Code format: array)
+  // Remove memfuse hooks (legacy malformed array format written by old installers)
   if (Array.isArray(config.hooks)) {
     config.hooks = config.hooks.filter((h: Record<string, unknown>) => {
       const cmd = (h.cmd || []) as string[];
@@ -51,7 +51,8 @@ function removeFromJson(file: string): void {
     if ((config.hooks as unknown[]).length === 0) delete config.hooks;
   }
 
-  // Remove memfuse hooks (Codex format: nested object)
+  // Remove memfuse hooks (canonical object format — Claude Code and Codex share
+  // the shape: hooks: { EventName: [{ matcher?, hooks: [{ command, ... }] }] })
   if (typeof config.hooks === 'object' && !Array.isArray(config.hooks)) {
     for (const eventName of Object.keys(config.hooks as Record<string, unknown>)) {
       const groups = (config.hooks as Record<string, unknown[]>)[eventName] as Record<string, unknown>[];
