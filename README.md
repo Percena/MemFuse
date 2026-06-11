@@ -56,10 +56,10 @@ npm install @percena/memfuse
 
 ```bash
 # Claude Code
-npx memfuse-setup install --platform=claude-code --server-url=http://127.0.0.1:18720
+npx --package=@percena/memfuse memfuse-setup install --platform=claude-code --server-url=http://127.0.0.1:18720
 
 # Codex
-npx memfuse-setup install --platform=codex --server-url=http://127.0.0.1:18720
+npx --package=@percena/memfuse memfuse-setup install --platform=codex --server-url=http://127.0.0.1:18720
 ```
 
 That's it. MemFuse hooks into the agent lifecycle transparently — no explicit "use memfuse" commands needed.
@@ -67,9 +67,9 @@ That's it. MemFuse hooks into the agent lifecycle transparently — no explicit 
 ### 4. Optional: Install as a System Service
 
 ```bash
-npx memfuse service install
-npx memfuse service start
-npx memfuse service doctor
+npx --package=@percena/memfuse memfuse service install
+npx --package=@percena/memfuse memfuse service start
+npx --package=@percena/memfuse memfuse service doctor
 ```
 
 **Core configuration:**
@@ -171,7 +171,7 @@ curl -X POST http://localhost:18720/v1/memory:search \
   "mcpServers": {
     "memfuse": {
       "command": "npx",
-      "args": ["memfuse-mcp"],
+      "args": ["--yes", "--package=@percena/memfuse", "memfuse-mcp"],
       "env": {
         "MEMFUSE_SERVER_URL": "http://localhost:18720",
         "MEMFUSE_USER_ID": "your-user-id"
@@ -366,19 +366,19 @@ The Node.js CLI (`memfuse`) provides 110 commands covering all API operations. T
 
 ```bash
 # Search memories
-npx memfuse search --query "auth decisions" --strategy diverse
+npx --package=@percena/memfuse memfuse search --query "auth decisions" --strategy diverse
 
 # Inspect a resource
-npx memfuse abstract --uri mfs://resources/git/github.com/org/repo
+npx --package=@percena/memfuse memfuse abstract --uri mfs://resources/git/github.com/org/repo
 
 # List facts
-npx memfuse list-facts
+npx --package=@percena/memfuse memfuse list-facts
 
 # Store an observation
-npx memfuse store-observation --tool-name "discovery" --content "Found rate limiter config in gateway/"
+npx --package=@percena/memfuse memfuse store-observation --tool-name "discovery" --content "Found rate limiter config in gateway/"
 
 # Check system health
-npx memfuse health
+npx --package=@percena/memfuse memfuse health
 ```
 
 Or install globally for shorter commands:

@@ -20,9 +20,9 @@ cargo build --release -p mfs-server && ./target/release/mfs-server
 
 | Component | Entry Point | Description |
 |-----------|-------------|-------------|
-| **CLI** | `npx memfuse` | 110 commands covering all API operations |
-| **MCP Server** | `npx memfuse-mcp` | 43 Agent-facing tools via MCP protocol |
-| **Setup Tool** | `npx memfuse-setup` | Platform installer for Claude Code / Codex |
+| **CLI** | `npx --package=@percena/memfuse memfuse` | 110 commands covering all API operations |
+| **MCP Server** | `npx --package=@percena/memfuse memfuse-mcp` | 43 Agent-facing tools via MCP protocol |
+| **Setup Tool** | `npx --package=@percena/memfuse memfuse-setup` | Platform installer for Claude Code / Codex |
 | **Lifecycle Hooks** | `@percena/memfuse/hooks` | 8 hooks for Claude Code, 3 for Codex |
 | **HTTP Client** | `@percena/memfuse/client` | Type-safe client for MemFuse Server API |
 
@@ -39,26 +39,26 @@ cargo build --release -p mfs-server && ./target/release/mfs-server
 
 ```bash
 # Claude Code
-npx memfuse-setup install --platform=claude-code --server-url=http://127.0.0.1:18720
+npx --package=@percena/memfuse memfuse-setup install --platform=claude-code --server-url=http://127.0.0.1:18720
 
 # Codex
-npx memfuse-setup install --platform=codex --server-url=http://127.0.0.1:18720
+npx --package=@percena/memfuse memfuse-setup install --platform=codex --server-url=http://127.0.0.1:18720
 ```
 
 ### 3. Use the CLI
 
 ```bash
 # Search memories
-npx memfuse search --query "auth decisions" --strategy diverse
+npx --package=@percena/memfuse memfuse search --query "auth decisions" --strategy diverse
 
 # List facts
-npx memfuse list-facts
+npx --package=@percena/memfuse memfuse list-facts
 
 # Store an observation
-npx memfuse store-observation --tool-name "discovery" --content "Found rate limiter config"
+npx --package=@percena/memfuse memfuse store-observation --tool-name "discovery" --content "Found rate limiter config"
 
 # Check health
-npx memfuse health
+npx --package=@percena/memfuse memfuse health
 ```
 
 Or install globally:
@@ -77,7 +77,7 @@ Add to your agent's MCP configuration:
   "mcpServers": {
     "memfuse": {
       "command": "npx",
-      "args": ["memfuse-mcp"],
+      "args": ["--yes", "--package=@percena/memfuse", "memfuse-mcp"],
       "env": {
         "MEMFUSE_SERVER_URL": "http://localhost:18720",
         "MEMFUSE_USER_ID": "your-user-id"
