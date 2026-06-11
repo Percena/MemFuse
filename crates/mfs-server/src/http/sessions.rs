@@ -276,6 +276,21 @@ pub(super) async fn add_observation(
     Path(session_id): Path<String>,
     Json(request): Json<AddObservationRequest>,
 ) -> HandlerResult<Json<serde_json::Value>> {
+    if matches!(
+        state.session_engine.get_session(&session_id).await,
+        Err(mfs_session::SessionError::NotFound(_))
+    ) {
+        state
+            .session_engine
+            .new_session_with_id(
+                &state.config.account_id,
+                &state.config.user_id,
+                &state.config.agent_id,
+                &session_id,
+            )
+            .await?;
+    }
+
     let platform = request.platform.unwrap_or_else(|| "mcp".to_string());
     let turn_id = format!(
         "{}:obs:{}:{}",

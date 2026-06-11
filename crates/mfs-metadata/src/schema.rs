@@ -193,6 +193,14 @@ pub(crate) fn bootstrap(conn: &Connection, separate_canvas_db: bool) -> Result<(
         mark_applied(conn, "0022")?;
     }
 
+    // Migration 0023: compound indexes for bounded prompt-time episode recall.
+    if !applied.iter().any(|v| v == "0023") {
+        conn.execute_batch(include_str!(
+            "migrations/0023_episode_recall_candidate_indexes.sql"
+        ))?;
+        mark_applied(conn, "0023")?;
+    }
+
     Ok(())
 }
 

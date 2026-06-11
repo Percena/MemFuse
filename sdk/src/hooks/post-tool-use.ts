@@ -9,7 +9,7 @@
  * B1: multi-endpoint routing via callBackend + CanvasRouter with offline degradation.
  */
 
-import { adaptInput, callBackend, readStdin, truncate, sanitizeMemoryText, isDegradableError, EXIT_OK, PATHS, loadConfig, isCliEntryPoint, ensureSession, router } from './platform-utils.js';
+import { adaptInput, callBackend, readStdin, truncate, sanitizeMemoryText, isDegradableError, EXIT_OK, PATHS, loadConfig, isCliEntryPoint, router } from './platform-utils.js';
 
 const config = loadConfig();
 
@@ -142,7 +142,6 @@ export default async function run(): Promise<void> {
     const observePath = `${PATHS.OBSERVE}/${sessionId || 'default'}/observations`;
     const metadata = computeMetadata(toolName, truncatedInput, truncatedOutput);
     try {
-      await ensureSession(sessionId || 'default');
       await callBackend('POST', observePath, {
         tool_name: toolName,
         tool_input: truncatedInput,

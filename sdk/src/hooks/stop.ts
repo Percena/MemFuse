@@ -8,7 +8,7 @@
  * B1: multi-endpoint routing via callBackend + CanvasRouter with offline degradation.
  */
 
-import { adaptInput, callBackend, readStdin, truncate, sanitizeMemoryText, isDegradableError, EXIT_OK, PATHS, loadConfig, isCliEntryPoint, ensureSession, router } from './platform-utils.js';
+import { adaptInput, callBackend, readStdin, truncate, sanitizeMemoryText, isDegradableError, EXIT_OK, PATHS, loadConfig, isCliEntryPoint, router } from './platform-utils.js';
 
 const config = loadConfig();
 
@@ -41,7 +41,6 @@ export default async function run(): Promise<void> {
     // Store the turn summary + structured session memory
     const observePath = `${PATHS.OBSERVE}/${sessionId || 'default'}/observations`;
     const turnContext = input.reason ? JSON.stringify({ reason: input.reason }) : '';
-    await ensureSession(sessionId || 'default');
 
     // 1. Store turn summary (existing behavior)
     try {

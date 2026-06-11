@@ -8,6 +8,8 @@
 //! inline. This module restores the "thin handler" principle by providing a single
 //! entry point that handles all business logic.
 
+use std::sync::Arc;
+
 use mfs_metadata::MetadataStore;
 use mfs_semantic::{EmbeddingProvider, cosine_similarity, parse_embedding_json};
 
@@ -20,7 +22,8 @@ use crate::llm::LlmAssist;
 use crate::overlay::build_overlay_entries;
 use crate::render::render_memory_injection;
 use crate::{
-    ConversationTurn, DEFAULT_EPISODIC_TOP_K, EpisodeSummary, FactEntry, MemoryContextArtifacts,
+    ConversationTurn, DEFAULT_EPISODIC_CANDIDATE_K, DEFAULT_EPISODIC_LOOKBACK_DAYS,
+    DEFAULT_EPISODIC_TOP_K, EpisodeSummary, FactEntry, MemoryContextArtifacts,
     MemoryContextResponse, MemoryContextSections, SearchStrategy,
 };
 
@@ -66,7 +69,7 @@ pub struct ResolveContextOutput {
 /// 3. Optionally append filesystem markdown memories
 /// 4. Write audit log
 pub async fn resolve_context(
-    metadata: &MetadataStore,
+    metadata: Arc<MetadataStore>,
     input: &ResolveContextInput,
     conversation_turns: &[ConversationTurn],
     llm: &LlmAssist,
@@ -85,12 +88,12 @@ pub async fn resolve_context(
 
     // Step 5-6: Load and transform facts.
     let all_fact_entries =
-        load_and_transform_facts(metadata, account_id, user_id, query, &input.at_time)
+        load_and_transform_facts(&metadata, account_id, user_id, query, &input.at_time)
             .map_err(|e| e.to_string())?;
 
     // Step 7: Load episodes.
     let all_episode_summaries =
-        load_and_transform_episodes(metadata, account_id, user_id, input.resource_id.as_deref())
+        load_and_transform_episodes(&metadata, account_id, user_id, input.resource_id.as_deref())
             .map_err(|e| e.to_string())?;
 
     // Step 8: Intent classification — classify_intent always returns IntentResult (has keyword fallback).
@@ -159,7 +162,7 @@ pub async fn resolve_context(
 
     // Step 14: Retrieve heuristics.
     let behavioral_heuristics =
-        retrieve_heuristics(metadata, account_id, user_id, &Vec::new(), query, 10);
+        retrieve_heuristics(&metadata, account_id, user_id, &Vec::new(), query, 10);
 
     // Assemble response.
     let sections = MemoryContextSections {
@@ -184,14 +187,13 @@ pub async fn resolve_context(
     // recalls. Passive hook injections (every prompt) must not inflate
     // reinforcement, or decay semantics become meaningless.
     if input.reinforce_recall {
-        writeback_recall_and_access_log(
-            metadata,
+        let _writeback_task = schedule_recall_access_writeback(
+            Arc::clone(&metadata),
             &final_facts,
             &final_episodes,
             account_id,
             user_id,
-        )
-        .map_err(|e| e.to_string())?;
+        );
     }
 
     Ok(ResolveContextOutput {
@@ -287,7 +289,13 @@ fn load_and_transform_episodes(
     user_id: &str,
     resource_id: Option<&str>,
 ) -> rusqlite::Result<Vec<EpisodeSummary>> {
-    let episode_rows = metadata.get_episodes_by_user(account_id, user_id, resource_id)?;
+    let episode_rows = metadata.get_episode_candidates_for_recall(
+        account_id,
+        user_id,
+        resource_id,
+        DEFAULT_EPISODIC_CANDIDATE_K,
+        Some(&default_episode_candidate_since()),
+    )?;
     Ok(episode_rows
         .into_iter()
         .map(|ep| EpisodeSummary {
@@ -442,22 +450,40 @@ async fn embed_query_with_timeout(
     }
 }
 
-/// Write recall_count, last_recalled_at, and access_log for final facts and episodes.
-fn writeback_recall_and_access_log(
-    metadata: &MetadataStore,
+fn default_episode_candidate_since() -> String {
+    (chrono::Utc::now() - chrono::Duration::days(DEFAULT_EPISODIC_LOOKBACK_DAYS))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
+}
+
+/// Write recall_count, last_recalled_at, and access_log outside the request path.
+fn schedule_recall_access_writeback(
+    metadata: Arc<MetadataStore>,
     facts: &[FactEntry],
     episodes: &[EpisodeSummary],
     account_id: &str,
     user_id: &str,
-) -> rusqlite::Result<()> {
+) -> tokio::task::JoinHandle<()> {
     let now = chrono::Utc::now().to_rfc3339();
-    for fact in facts {
-        metadata.increment_fact_recall(&fact.fact_id, &now)?;
-        metadata.append_access_log(&fact.fact_id, "fact", &now, account_id, user_id)?;
-    }
-    for episode in episodes {
-        metadata.increment_episode_recall(&episode.episode_id, &now)?;
-        metadata.append_access_log(&episode.episode_id, "episode", &now, account_id, user_id)?;
-    }
-    Ok(())
+    let fact_ids: Vec<String> = facts.iter().map(|fact| fact.fact_id.clone()).collect();
+    let episode_ids: Vec<String> = episodes
+        .iter()
+        .map(|episode| episode.episode_id.clone())
+        .collect();
+    let account_id = account_id.to_owned();
+    let user_id = user_id.to_owned();
+
+    tokio::task::spawn_blocking(move || {
+        let fact_id_refs: Vec<&str> = fact_ids.iter().map(String::as_str).collect();
+        let episode_id_refs: Vec<&str> = episode_ids.iter().map(String::as_str).collect();
+        if let Err(error) = metadata.record_recall_access_batch(
+            &fact_id_refs,
+            &episode_id_refs,
+            &now,
+            &account_id,
+            &user_id,
+        ) {
+            tracing::warn!(error = %error, "recall access writeback failed");
+        }
+    })
 }

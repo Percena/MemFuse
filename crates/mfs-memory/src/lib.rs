@@ -353,6 +353,7 @@ pub const DEFAULT_GENERIC_FACT_LIMIT: usize = 2;
 
 // Episodic search constants
 pub const DEFAULT_EPISODIC_CANDIDATE_K: usize = 8;
+pub const DEFAULT_EPISODIC_LOOKBACK_DAYS: i64 = 180;
 pub const DEFAULT_EPISODIC_TOP_K: usize = 5;
 
 // Overlay constants (aligned with Go constants)

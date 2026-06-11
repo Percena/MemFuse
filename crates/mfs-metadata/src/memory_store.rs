@@ -537,6 +537,70 @@ impl MetadataStore {
         }
     }
 
+    /// Get a bounded candidate set for online context resolution.
+    ///
+    /// `resolve_context` only needs a small reranking pool, not every historical
+    /// episode. Keep this query bounded at the storage layer so prompt-time
+    /// recall cost does not grow linearly with a user's full episode history.
+    pub fn get_episode_candidates_for_recall(
+        &self,
+        account_id: &str,
+        user_id: &str,
+        resource_id: Option<&str>,
+        limit: usize,
+        since: Option<&str>,
+    ) -> Result<Vec<EpisodeRow>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock_conn()?;
+        if let Some(resource_id) = resource_id {
+            let mut stmt = conn.prepare(
+                "SELECT episode_id, account_id, user_id, agent_id,
+                        session_id, resource_id,
+                        summary, detail_ref, keywords_json,
+                        salience_score, strength_score,
+                        emotional_valence, emotional_intensity,
+                        context_tags_json, recall_count, last_recalled_at,
+                        source_start_turn_id, source_end_turn_id,
+                        created_at, archived_at, last_decay_at, embedding_json
+                 FROM episode_chunks
+                 WHERE account_id = ?1 AND user_id = ?2 AND resource_id = ?3
+                   AND archived_at IS NULL
+                   AND (?4 IS NULL OR created_at >= ?4)
+                 ORDER BY salience_score DESC, created_at DESC
+                 LIMIT ?5",
+            )?;
+            let rows = stmt.query_map(
+                params![account_id, user_id, resource_id, since, limit as i64],
+                episode_row_from_row,
+            )?;
+            rows.collect()
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT episode_id, account_id, user_id, agent_id,
+                        session_id, resource_id,
+                        summary, detail_ref, keywords_json,
+                        salience_score, strength_score,
+                        emotional_valence, emotional_intensity,
+                        context_tags_json, recall_count, last_recalled_at,
+                        source_start_turn_id, source_end_turn_id,
+                        created_at, archived_at, last_decay_at, embedding_json
+                 FROM episode_chunks
+                 WHERE account_id = ?1 AND user_id = ?2
+                   AND archived_at IS NULL
+                   AND (?3 IS NULL OR created_at >= ?3)
+                 ORDER BY salience_score DESC, created_at DESC
+                 LIMIT ?4",
+            )?;
+            let rows = stmt.query_map(
+                params![account_id, user_id, since, limit as i64],
+                episode_row_from_row,
+            )?;
+            rows.collect()
+        }
+    }
+
     /// Get recent high-salience episodes.
     /// Returns the most recent N episodes with salience >= min_salience,
     /// optionally limited to those created after a specific timestamp.
@@ -729,6 +793,52 @@ impl MetadataStore {
             params![memory_id, memory_type, accessed_at, account_id, user_id],
         )?;
         Ok(())
+    }
+
+    /// Increment recall counters and append access-log rows in one transaction.
+    ///
+    /// Prompt-time context resolution can touch several facts and episodes.
+    /// Doing this as a single transaction avoids per-memory SQLite lock/commit
+    /// churn on the read path.
+    pub fn record_recall_access_batch(
+        &self,
+        fact_ids: &[&str],
+        episode_ids: &[&str],
+        recalled_at: &str,
+        account_id: &str,
+        user_id: &str,
+    ) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        for fact_id in fact_ids {
+            tx.execute(
+                "UPDATE facts
+                 SET recall_count = recall_count + 1,
+                     last_recalled_at = ?2
+                 WHERE id = ?1",
+                params![fact_id, recalled_at],
+            )?;
+            tx.execute(
+                "INSERT INTO memory_access_log (memory_id, memory_type, accessed_at, account_id, user_id)
+                 VALUES (?1, 'fact', ?2, ?3, ?4)",
+                params![fact_id, recalled_at, account_id, user_id],
+            )?;
+        }
+        for episode_id in episode_ids {
+            tx.execute(
+                "UPDATE episode_chunks
+                 SET recall_count = recall_count + 1,
+                     last_recalled_at = ?2
+                 WHERE episode_id = ?1",
+                params![episode_id, recalled_at],
+            )?;
+            tx.execute(
+                "INSERT INTO memory_access_log (memory_id, memory_type, accessed_at, account_id, user_id)
+                 VALUES (?1, 'episode', ?2, ?3, ?4)",
+                params![episode_id, recalled_at, account_id, user_id],
+            )?;
+        }
+        tx.commit()
     }
 
     /// Prune access log entries older than `cutoff_days` days.
@@ -1468,5 +1578,254 @@ impl MetadataStore {
         )?;
         let rows = stmt.query_map(params![rule_id], stored_heuristic_evidence_from_row)?;
         rows.collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn insert_test_episode(
+        store: &MetadataStore,
+        episode_id: &str,
+        user_id: &str,
+        resource_id: Option<&str>,
+        salience_score: f64,
+        archived_at: Option<&str>,
+    ) {
+        let _ = store.insert_session("session-1", "acme", user_id, "coding-agent", "active", None);
+        store
+            .insert_episode(
+                episode_id,
+                "acme",
+                user_id,
+                "coding-agent",
+                "session-1",
+                resource_id,
+                episode_id,
+                None,
+                None,
+                salience_score,
+                0.5,
+                None,
+                None,
+                None,
+                0,
+                None,
+                None,
+                None,
+                archived_at,
+                None,
+                None,
+            )
+            .unwrap();
+    }
+
+    fn insert_test_fact(store: &MetadataStore, fact_id: &str) {
+        store
+            .insert_fact(&FactRecord {
+                id: fact_id,
+                account_id: "acme",
+                user_id: "alice",
+                agent_id: Some("coding-agent"),
+                subject: "alice",
+                predicate: "prefers_editor",
+                display_value: "zed",
+                normalized_value_json: None,
+                value_type: "text",
+                confidence: 0.9,
+                status: "active",
+                valid_from: None,
+                valid_to: None,
+                source_assertion_id: None,
+                source_episode_ids_json: None,
+            })
+            .unwrap();
+    }
+
+    fn set_episode_created_at(store: &MetadataStore, episode_id: &str, created_at: &str) {
+        store
+            .lock_conn()
+            .unwrap()
+            .execute(
+                "UPDATE episode_chunks SET created_at = ?2 WHERE episode_id = ?1",
+                params![episode_id, created_at],
+            )
+            .unwrap();
+    }
+
+    fn sqlite_index_names(store: &MetadataStore) -> Vec<String> {
+        let conn = store.lock_conn().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT name
+                 FROM sqlite_master
+                 WHERE type = 'index'
+                 ORDER BY name",
+            )
+            .unwrap();
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn episode_recall_candidate_indexes_are_bootstrapped() {
+        let store = MetadataStore::open_in_memory(false).unwrap();
+        let indexes = sqlite_index_names(&store);
+
+        assert!(
+            indexes.contains(&"idx_episode_recall_candidates_by_resource".to_string()),
+            "resource-scoped recall candidate index missing: {indexes:?}"
+        );
+        assert!(
+            indexes.contains(&"idx_episode_recall_candidates_all_resources".to_string()),
+            "all-resource recall candidate index missing: {indexes:?}"
+        );
+    }
+
+    #[test]
+    fn episode_candidates_for_recall_are_bounded_ranked_and_filtered() {
+        let store = MetadataStore::open_in_memory(false).unwrap();
+        insert_test_episode(&store, "ep-low", "alice", Some("repo-1"), 0.1, None);
+        insert_test_episode(&store, "ep-high", "alice", Some("repo-1"), 0.9, None);
+        insert_test_episode(&store, "ep-mid", "alice", Some("repo-1"), 0.5, None);
+        insert_test_episode(
+            &store,
+            "ep-archived",
+            "alice",
+            Some("repo-1"),
+            1.0,
+            Some("2026-01-01T00:00:00Z"),
+        );
+        insert_test_episode(
+            &store,
+            "ep-other-resource",
+            "alice",
+            Some("repo-2"),
+            0.95,
+            None,
+        );
+        insert_test_episode(&store, "ep-other-user", "bob", Some("repo-1"), 0.99, None);
+
+        let rows = store
+            .get_episode_candidates_for_recall("acme", "alice", Some("repo-1"), 2, None)
+            .unwrap();
+        let ids: Vec<&str> = rows.iter().map(|row| row.episode_id.as_str()).collect();
+        assert_eq!(ids, vec!["ep-high", "ep-mid"]);
+
+        let all_resource_rows = store
+            .get_episode_candidates_for_recall("acme", "alice", None, 3, None)
+            .unwrap();
+        let all_resource_ids: Vec<&str> = all_resource_rows
+            .iter()
+            .map(|row| row.episode_id.as_str())
+            .collect();
+        assert_eq!(
+            all_resource_ids,
+            vec!["ep-other-resource", "ep-high", "ep-mid"]
+        );
+
+        assert!(
+            store
+                .get_episode_candidates_for_recall("acme", "alice", None, 0, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn episode_candidates_for_recall_can_prefilter_by_time_window() {
+        let store = MetadataStore::open_in_memory(false).unwrap();
+        insert_test_episode(&store, "ep-old", "alice", Some("repo-1"), 0.95, None);
+        insert_test_episode(&store, "ep-new", "alice", Some("repo-1"), 0.5, None);
+        set_episode_created_at(&store, "ep-old", "2025-01-01 00:00:00");
+        set_episode_created_at(&store, "ep-new", "2026-06-01 00:00:00");
+
+        let rows = store
+            .get_episode_candidates_for_recall(
+                "acme",
+                "alice",
+                Some("repo-1"),
+                10,
+                Some("2026-01-01 00:00:00"),
+            )
+            .unwrap();
+        let ids: Vec<&str> = rows.iter().map(|row| row.episode_id.as_str()).collect();
+        assert_eq!(ids, vec!["ep-new"]);
+    }
+
+    #[test]
+    fn record_recall_access_batch_updates_counts_and_logs_once() {
+        let store = MetadataStore::open_in_memory(false).unwrap();
+        insert_test_fact(&store, "fact-1");
+        insert_test_episode(&store, "ep-1", "alice", Some("repo-1"), 0.5, None);
+
+        store
+            .record_recall_access_batch(
+                &["fact-1"],
+                &["ep-1"],
+                "2026-06-11T12:00:00Z",
+                "acme",
+                "alice",
+            )
+            .unwrap();
+
+        let fact = store.get_fact("fact-1").unwrap().unwrap();
+        assert_eq!(fact.recall_count, 1);
+        assert_eq!(
+            fact.last_recalled_at.as_deref(),
+            Some("2026-06-11T12:00:00Z")
+        );
+
+        let episode = store.get_episode("ep-1").unwrap().unwrap();
+        assert_eq!(episode.recall_count, 1);
+        assert_eq!(
+            episode.last_recalled_at.as_deref(),
+            Some("2026-06-11T12:00:00Z")
+        );
+
+        let conn = store.lock_conn().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT memory_id, memory_type, accessed_at, account_id, user_id
+                 FROM memory_access_log
+                 ORDER BY memory_type, memory_id",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    "ep-1".to_string(),
+                    "episode".to_string(),
+                    "2026-06-11T12:00:00Z".to_string(),
+                    "acme".to_string(),
+                    "alice".to_string(),
+                ),
+                (
+                    "fact-1".to_string(),
+                    "fact".to_string(),
+                    "2026-06-11T12:00:00Z".to_string(),
+                    "acme".to_string(),
+                    "alice".to_string(),
+                ),
+            ]
+        );
     }
 }

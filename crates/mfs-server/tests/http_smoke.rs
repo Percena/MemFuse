@@ -1457,6 +1457,55 @@ async fn http_observation_sanitizes_secret_patterns_before_storage() {
 }
 
 #[tokio::test]
+async fn http_observation_upserts_missing_session() {
+    let _env_guard = env_isolated();
+    let workspace = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let app = test_app(&workspace, &source);
+
+    let observation = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/sessions/session-upsert/observations")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{
+                        "tool_name":"Bash",
+                        "tool_input":"npm test",
+                        "tool_output":"224 tests passed",
+                        "content":"Ran npm test",
+                        "platform":"test"
+                    }"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(observation.status().is_success());
+
+    let session = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/sessions/session-upsert")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(session.status().is_success());
+
+    let messages_path = workspace
+        .path()
+        .join("tenants/acme/alice/session/coding-agent/session-upsert/messages.jsonl");
+    let stored = std::fs::read_to_string(messages_path).unwrap();
+    assert!(stored.contains("Ran npm test"), "{stored}");
+}
+
+#[tokio::test]
 async fn http_rate_limit_returns_429_with_retry_after() {
     let env_guard = env_isolated();
     env_guard.set_var("MEMFUSE_RATE_LIMIT_ENABLED", "true");

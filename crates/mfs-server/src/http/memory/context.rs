@@ -239,7 +239,7 @@ pub(in crate::http) async fn resolve_memory_context(
     };
 
     let result = mfs_memory::service::resolve_context(
-        &state.metadata,
+        std::sync::Arc::clone(&state.metadata),
         &input,
         &conversation_turns,
         &state.read_llm,

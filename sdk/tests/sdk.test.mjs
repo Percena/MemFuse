@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, access, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, access, writeFile, mkdir, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -664,6 +664,39 @@ describe('HTTP Client', () => {
 // ─── 9. Setup installer ─────────────────────────────────────────────────
 
 describe('Setup installer', () => {
+  it('writes Claude Code hooks in canonical event-grouped schema without legacy array entries', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'memfuse-claude-setup-'));
+    const { runSetup } = await import('../dist/setup/install.js');
+    const originalPath = process.env.PATH;
+    process.env.PATH = '';
+
+    try {
+      await runSetup([
+        '--platform=claude-code',
+        `--project-dir=${projectDir}`,
+        '--user-id=alice',
+        '--server-url=http://127.0.0.1:9',
+      ]);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+
+    const settings = JSON.parse(await readFile(join(projectDir, '.claude', 'settings.local.json'), 'utf-8'));
+    assert.equal(Array.isArray(settings.hooks), false, 'Claude Code hooks must be grouped by event, not a legacy array');
+
+    for (const eventName of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompact', 'SessionEnd', 'Setup']) {
+      assert.ok(Array.isArray(settings.hooks[eventName]), `${eventName} hook group should exist`);
+      assert.ok(Array.isArray(settings.hooks[eventName][0].hooks), `${eventName} should contain command hooks`);
+      assert.equal(settings.hooks[eventName][0].hooks[0].type, 'command');
+      assert.match(settings.hooks[eventName][0].hooks[0].command, /--platform=claude-code/);
+      assert.match(settings.hooks[eventName][0].hooks[0].command, /MEMFUSE_SERVER_URL="http:\/\/127\.0\.0\.1:9"/);
+    }
+
+    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read');
+    await access(join(projectDir, '.claude-plugin', 'plugin.json'));
+    await assert.rejects(access(join(projectDir, '.codex-plugin', 'plugin.json')));
+  });
+
   it('installs the Codex plugin manifest into .codex-plugin and widens Codex hook matcher coverage', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'memfuse-sdk-'));
     const codexHome = join(projectDir, 'codex-home');
@@ -701,6 +734,58 @@ describe('Setup installer', () => {
     assert.match(codexConfig, /:stop:0:0/);
     assert.match(codexConfig, /trusted_hash = "sha256:[a-f0-9]{64}"/);
     await assert.rejects(access(join(projectDir, '.claude-plugin', 'plugin.json')));
+  });
+
+  it('reports detected Codex hook support when the Codex CLI exposes the hooks feature', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'memfuse-codex-hooks-'));
+    const binDir = join(projectDir, 'bin');
+    const codexHome = join(projectDir, 'codex-home');
+    await mkdir(binDir, { recursive: true });
+    const fakeCodex = join(binDir, 'codex');
+    await writeFile(fakeCodex, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'features' && args[1] === 'list') {
+  console.log('hooks stable true');
+  process.exit(0);
+}
+process.exit(1);
+`, 'utf-8');
+    await chmod(fakeCodex, 0o755);
+
+    const { runSetup } = await import('../dist/setup/install.js');
+    const originalPath = process.env.PATH;
+    const originalCodexHome = process.env.CODEX_HOME;
+    const originalLog = console.log;
+    const logs = [];
+    process.env.PATH = `${binDir}:${originalPath || ''}`;
+    process.env.CODEX_HOME = codexHome;
+    console.log = (...args) => { logs.push(args.join(' ')); };
+
+    try {
+      await runSetup([
+        '--platform=codex',
+        `--project-dir=${projectDir}`,
+        '--user-id=alice',
+        '--server-url=http://127.0.0.1:9',
+      ]);
+    } finally {
+      console.log = originalLog;
+      process.env.PATH = originalPath;
+      if (originalCodexHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = originalCodexHome;
+    }
+
+    const output = logs.join('\n');
+    assert.match(output, /Codex hooks support detected/);
+    assert.doesNotMatch(output, /require a Codex build with hooks support/);
+  });
+});
+
+describe('Documentation consistency', () => {
+  it('does not document 8720 as the independent service default after port unification', async () => {
+    const architecture = await readFile(new URL('../../docs/architecture.md', import.meta.url), 'utf-8');
+    assert.doesNotMatch(architecture, /独立服务默认 `http:\/\/127\.0\.0\.1:8720`/);
+    assert.match(architecture, /`MEMFUSE_SERVER_URL` 或内置默认 `http:\/\/127\.0\.0\.1:18720`/);
   });
 });
 
@@ -1397,7 +1482,7 @@ describe('SessionStart hook', () => {
 });
 
 describe('PostToolUse hook', () => {
-  it('creates the session before storing observations', async () => {
+  it('stores observations with a single request and relies on server-side session upsert', async () => {
     const requests = [];
     const server = http.createServer((req, res) => {
       let body = '';
@@ -1441,11 +1526,10 @@ describe('PostToolUse hook', () => {
     const exitCode = await new Promise(resolve => child.on('close', resolve));
     try {
       assert.equal(exitCode, 0, `stderr:\n${stderr}`);
+      assert.equal(requests.length, 1);
       assert.equal(requests[0].method, 'POST');
-      assert.equal(requests[0].url, '/sessions');
-      assert.equal(requests[0].body.session_id, 'session-hook');
-      assert.equal(requests[1].method, 'POST');
-      assert.equal(requests[1].url, '/sessions/session-hook/observations');
+      assert.equal(requests[0].url, '/sessions/session-hook/observations');
+      assert.equal(requests[0].body.tool_name, 'Bash');
     } finally {
       server.close();
     }

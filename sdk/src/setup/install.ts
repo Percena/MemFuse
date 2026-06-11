@@ -171,6 +171,24 @@ function writeCodexHookTrustConfig(configFile: string, hooksFile: string, specs:
   writeFileSync(configFile, `${configToml}${configToml ? '\n\n' : ''}${trustBlocks}\n`, 'utf-8');
 }
 
+function codexCliHooksSupport(): 'supported' | 'unsupported' | 'unknown' {
+  try {
+    const output = execFileSync('codex', ['features', 'list'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
+    const hooksLine = output
+      .split(/\r?\n/)
+      .map((line) => line.trim().split(/\s+/))
+      .find(([name]) => name === 'hooks' || name === 'codex_hooks');
+    if (!hooksLine) return 'unsupported';
+    return hooksLine[hooksLine.length - 1] === 'true' ? 'supported' : 'unsupported';
+  } catch {
+    return 'unknown';
+  }
+}
+
 function mergeJson(file: string, snippet: Record<string, unknown>): void {
   let existing: Record<string, unknown> = {};
   if (existsSync(file)) {
@@ -460,9 +478,16 @@ async function installCodex(projectDir: string, serverUrl: string, userId: strin
     writeCodexHookTrustConfig(codexConfigFile, hooksFile, hookSpecs);
     console.log('  ✓ Hooks configured (SessionStart, PostToolUse[Bash/Read/Edit/Write/Glob/Grep/MCP], Stop)');
     console.log(`  ✓ Codex hooks enabled and trusted in ${codexConfigFile}`);
-    console.log('  ⚠ Note: lifecycle hooks require a Codex build with hooks support');
-    console.log('    ([features] hooks). On Codex CLIs without hooks, MemFuse still works');
-    console.log('    in MCP + Skill mode — call resolve_context / store_observation explicitly.');
+    const hookSupport = codexCliHooksSupport();
+    if (hookSupport === 'supported') {
+      console.log('  ✓ Codex hooks support detected (`codex features list`: hooks=true)');
+    } else if (hookSupport === 'unsupported') {
+      console.log('  ⚠ Codex CLI does not report hooks support');
+      console.log('    MemFuse still works in MCP + Skill mode — call resolve_context / store_observation explicitly.');
+    } else {
+      console.log('  ⚠ Could not detect Codex hooks support');
+      console.log('    If this Codex CLI lacks hooks, MemFuse still works in MCP + Skill mode.');
+    }
   } else {
     console.log('  ⊘ Hooks skipped (--skills only)');
   }
