@@ -782,8 +782,17 @@ process.exit(1);
 });
 
 describe('Documentation consistency', () => {
-  it('does not document 8720 as the independent service default after port unification', async () => {
-    const architecture = await readFile(new URL('../../docs/architecture.md', import.meta.url), 'utf-8');
+  it('does not document 8720 as the independent service default after port unification', async (t) => {
+    // This doc lives in the monorepo, not in the published @percena/memfuse
+    // package. Skip rather than fail when the suite runs outside the repo tree.
+    const docPath = new URL('../../docs/architecture.md', import.meta.url);
+    let architecture;
+    try {
+      architecture = await readFile(docPath, 'utf-8');
+    } catch (err) {
+      if (err.code === 'ENOENT') { t.skip('docs/architecture.md not present outside monorepo'); return; }
+      throw err;
+    }
     assert.doesNotMatch(architecture, /独立服务默认 `http:\/\/127\.0\.0\.1:8720`/);
     assert.match(architecture, /`MEMFUSE_SERVER_URL` 或内置默认 `http:\/\/127\.0\.0\.1:18720`/);
   });

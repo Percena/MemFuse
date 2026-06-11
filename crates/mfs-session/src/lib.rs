@@ -195,6 +195,7 @@ impl SessionEngine {
         validate_identity_segment(account_id, "account_id")?;
         validate_identity_segment(user_id, "user_id")?;
         validate_identity_segment(agent_id, "agent_id")?;
+        validate_identity_segment(session_id, "session_id")?;
         let root = self
             .workspace_root
             .join("tenants")

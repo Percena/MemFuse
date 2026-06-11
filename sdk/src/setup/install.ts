@@ -178,12 +178,19 @@ function codexCliHooksSupport(): 'supported' | 'unsupported' | 'unknown' {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 5000,
     });
-    const hooksLine = output
+    // `codex features list` has no stable column format across builds, so match
+    // tolerantly: a row whose name token (ignoring a trailing `:`) is the hooks
+    // feature, and treat any affirmative token on that row as "enabled".
+    const hooksTokens = output
       .split(/\r?\n/)
       .map((line) => line.trim().split(/\s+/))
-      .find(([name]) => name === 'hooks' || name === 'codex_hooks');
-    if (!hooksLine) return 'unsupported';
-    return hooksLine[hooksLine.length - 1] === 'true' ? 'supported' : 'unsupported';
+      .find((tokens) => {
+        const name = tokens[0]?.replace(/:$/, '').toLowerCase();
+        return name === 'hooks' || name === 'codex_hooks';
+      });
+    if (!hooksTokens) return 'unsupported';
+    const enabled = hooksTokens.some((token) => /^(true|enabled|yes|on)$/i.test(token));
+    return enabled ? 'supported' : 'unsupported';
   } catch {
     return 'unknown';
   }

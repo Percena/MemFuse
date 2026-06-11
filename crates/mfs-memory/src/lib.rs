@@ -352,7 +352,12 @@ pub const MIN_INJECTED_FACT_CONFIDENCE: f64 = 0.5;
 pub const DEFAULT_GENERIC_FACT_LIMIT: usize = 2;
 
 // Episodic search constants
-pub const DEFAULT_EPISODIC_CANDIDATE_K: usize = 8;
+// CANDIDATE_K bounds the storage-layer recall pool so prompt-time cost does not
+// grow with full episode history. It must stay well above TOP_K: the candidates
+// are pre-filtered by salience (a coarse prior), then reranked by query-embedding
+// similarity down to TOP_K. A pool only marginally larger than TOP_K would let
+// salience, not semantic relevance, decide the final set.
+pub const DEFAULT_EPISODIC_CANDIDATE_K: usize = 64;
 pub const DEFAULT_EPISODIC_LOOKBACK_DAYS: i64 = 180;
 pub const DEFAULT_EPISODIC_TOP_K: usize = 5;
 

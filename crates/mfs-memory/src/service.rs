@@ -187,6 +187,12 @@ pub async fn resolve_context(
     // recalls. Passive hook injections (every prompt) must not inflate
     // reinforcement, or decay semantics become meaningless.
     if input.reinforce_recall {
+        // Fire-and-forget: the JoinHandle is intentionally dropped so the
+        // recall write-back never blocks the context response. Trade-off: if
+        // the process exits before the spawned task runs (one-shot CLI call or
+        // shutdown mid-flight), this recall's count/access-log update is lost.
+        // That is an acceptable slow drift in decay statistics, not a
+        // correctness hazard for the returned context.
         let _writeback_task = schedule_recall_access_writeback(
             Arc::clone(&metadata),
             &final_facts,

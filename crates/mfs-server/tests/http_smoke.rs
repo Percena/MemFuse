@@ -1506,6 +1506,44 @@ async fn http_observation_upserts_missing_session() {
 }
 
 #[tokio::test]
+async fn http_observation_rejects_path_traversal_session_id() {
+    let _env_guard = env_isolated();
+    let workspace = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let app = test_app(&workspace, &source);
+
+    // Percent-encoded slashes decode into a single path param, so the upsert
+    // must not let a traversal id escape the workspace when creating a session.
+    let observation = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/sessions/..%2F..%2F..%2Fpwned/observations")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{
+                        "tool_name":"Bash",
+                        "tool_input":"npm test",
+                        "tool_output":"ok",
+                        "content":"traversal attempt",
+                        "platform":"test"
+                    }"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(
+        observation.status().is_client_error(),
+        "traversal session id must be rejected, got {}",
+        observation.status()
+    );
+    assert!(!workspace.path().join("pwned").exists());
+    assert!(!workspace.path().parent().unwrap().join("pwned").exists());
+}
+
+#[tokio::test]
 async fn http_rate_limit_returns_429_with_retry_after() {
     let env_guard = env_isolated();
     env_guard.set_var("MEMFUSE_RATE_LIMIT_ENABLED", "true");

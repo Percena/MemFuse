@@ -189,16 +189,6 @@ export const PATHS = {
   HEURISTICS_L0: '/heuristics/l0-confirmed',
 } as const;
 
-export async function ensureSession(sessionId: string): Promise<void> {
-  if (!sessionId) return;
-  try {
-    await callBackend('POST', PATHS.OBSERVE, { session_id: sessionId }, router);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (!/Server returned 409/.test(message)) throw err;
-  }
-}
-
 // ─── Stdin Reader ──────────────────────────────────────────────────────
 
 export function readStdin(): Promise<string> {
