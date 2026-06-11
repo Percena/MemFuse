@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-11
+
+### Fixed
+
+- Normalize npm bin packaging to resolve invalid bin name warnings during publish
+
+### Improved
+
+- Harden session upsert logic and improve episode recall fidelity
+- CI: add job timeouts, upgrade to Node 24 LTS, and bump GitHub Actions to v5
+
 ## [0.2.0] - 2026-06-11
 
 ### Fixed
