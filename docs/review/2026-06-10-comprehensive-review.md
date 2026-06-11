@@ -37,8 +37,8 @@ Facts / Episodes / Heuristics 三类记忆 + 遗忘曲线 + consolidation cursor
 
 ### 主要风险
 
-- **读路径扩展性**（遗留建议，见 §6-R1）：`service.rs::resolve_context` 把该用户全部 episodes 拉入内存、逐条 `parse_embedding_json` 算余弦相似度，绕开了 semantic.sqlite 现成的 vec0 向量索引；同一请求内逐条同步 SQLite UPDATE 写回。记忆量上千后每个 prompt 的注入延迟线性恶化。
-- **每次工具调用的进程开销**（遗留建议，见 §6-R2）：PostToolUse 无 matcher，每个工具调用 spawn 一个 node 进程 + 2 个 HTTP 请求（ensureSession + observation）。
+- ~~**读路径扩展性**（§6-R1）~~：~~`service.rs::resolve_context` 把该用户全部 episodes 拉入内存、逐条 `parse_embedding_json` 算余弦相似度，绕开了 semantic.sqlite 现成的 vec0 向量索引；同一请求内逐条同步 SQLite UPDATE 写回。~~ **已解决** — `resolve_context` 改为通过 `get_episode_candidates_for_recall` 做 180 天窗口 + `DEFAULT_EPISODIC_CANDIDATE_K` LIMIT 预筛，recall 写回合并为 `record_recall_access_batch` 单事务 + `spawn_blocking` 后台执行，0023 复合索引支撑。
+- ~~**每次工具调用的进程开销**（§6-R2）~~：~~PostToolUse 无 matcher，每个工具调用 spawn 一个 node 进程 + 2 个 HTTP 请求（ensureSession + observation）。~~ **已解决** — 服务端 `POST /sessions/{id}/observations` 支持 upsert（自动创建 session），客户端删除 `ensureSession` 前置请求，单次工具调用仅 1 个 HTTP 请求。
 
 ---
 
@@ -83,7 +83,7 @@ Facts / Episodes / Heuristics 三类记忆 + 遗忘曲线 + consolidation cursor
 
 ## 4. 接口设计评估
 
-- **HTTP API 风格不统一**（遗留建议 §6-R3）：`/v1/memory:search`、`/v1/eval/recall` 带版本前缀 + Google 风格 `:action`，其余 110+ 路由是 flat 路径（`/sessions`、`/facts`、`/read`）。architecture.md §3.2 自己也承认。建议统一到 `/v1` 并保留旧路径 alias，越晚改代价越大。
+- **HTTP API 风格不统一**（§6-R3，进行中）：原有 110+ flat 路由现已增加 `/v1/` 版本并行注册，旧路径中间件已添加 `Deprecation: true` + `Sunset: 2027-01-01` 响应头；SDK 尚未切换到 `/v1` 路径。
 - **错误协议清晰**：`{error: {category, message, retryable}}` 一致且带 retryable 提示，good。
 - **MCP 工具面（43 个）偏大**：token 成本已被 CLI+Skill 路线对冲，但 MCP 模式下 schema 注入依旧 ~1k tokens/request。建议长期收敛 MCP 工具到核心 7-10 个（guide/search/resolve/store/commit/timeline/observations），管理面只留 CLI。
 - **双 MCP 面（SDK 43 工具 vs mfs-mcp 33 工具）**：职责划分（agent vs ops）合理，但两套工具名容易漂移，建议在 CI 加一个清单对照测试。
@@ -91,20 +91,89 @@ Facts / Episodes / Heuristics 三类记忆 + 遗忘曲线 + consolidation cursor
 
 ## 5. 代码质量评估
 
-- **Rust**：fmt + clippy `-D warnings` 全量过 CI；错误类型统一（MfsError + AppError）；auth/路径校验/PID lock 等基础设施认真。主要扣分项是读路径的 O(N) 内存重排（§6-R1）与个别 handler 文件偏大（http/mod.rs 1677 行，但其中多为路由注册，可接受）。
+- **Rust**：fmt + clippy `-D warnings` 全量过 CI；错误类型统一（MfsError + AppError）；auth/路径校验/PID lock 等基础设施认真。~~主要扣分项是读路径的 O(N) 内存重排（§6-R1）~~（已解决）与个别 handler 文件偏大（http/mod.rs 1677 行，但其中多为路由注册，可接受）。
 - **TypeScript**：hooks 代码风格一致、fail-open 纪律好；但适配层对宿主协议的**事实性认知错误**（hooks schema、Stop 字段、PreToolUse 输出语义）说明缺一个"对照官方文档的 contract 测试层"。`buildSessionMemory`/`computeMetadata` 的启发式提取实现合理（双语关键词、上限裁剪）。
 - **测试结构性缺口**：e2e 用 stdin 直调 hook 脚本，验证了 hook 逻辑却没验证 hook **注册**。这是 P0-1 能存活的根本原因。建议增加一条用真实 `claude` CLI（`claude --init-only` 或 `-p` 模式）跑通 SessionStart 注入的冒烟用例（CI 无凭据时 skip）。
 
-## 6. 遗留建议（本次未修，按优先级）
+## 6. 遗留建议与待办清单
 
-> 已整理为可跟踪的待办清单：[TODO.md](TODO.md)（含验收标准），后续进展请在该文件勾选。
+> 状态约定：✅ 已完成 / 🔶 进行中 / ⬜ 未开始。
+> 最后验证日期：2026-06-11。
 
-- **R1 读路径扩展性**：episodes 召回改走 semantic.sqlite 的 vec0 索引（或至少给 `get_episodes_by_user` 加 LIMIT + 时间窗），recall 写回改为批量/异步（spawn_blocking + 单事务）。
-- **R2 观察捕获开销**：PostToolUse 客户端缓冲合批；`ensureSession` 幂等化后移除每次前置 POST；或服务端 observations 接口支持 upsert-session 语义。
-- **R3 API 版本统一**：全部路由迁移 `/v1` 前缀，旧 flat 路径 301/alias 一个大版本周期。
-- **R4 真实宿主 e2e**：CI 加 `claude --init-only` 冒烟（见 §5）；Codex 侧探测 `codex` CLI 是否支持 hooks 并在安装输出中区分。
-- **R5 migrations 目录说明**：标注每个编号属于 metadata.sqlite 还是 canvas 库（P2-3）。
-- **R6 MCP 工具面收敛**：见 §4。
+### 高优先级
+
+- ✅ **R1 读路径扩展性：episodes 召回走向量索引**
+  原问题：`mfs-memory/src/service.rs::resolve_context` 将用户全部 episodes 拉入内存，
+  逐条 `parse_embedding_json` 计算余弦相似度，绕开了 `semantic.sqlite` 现成的 vec0 索引；
+  同请求内还对每条命中做同步 SQLite UPDATE（recall 写回）。
+  已完成：
+  1. `MetadataStore::get_episode_candidates_for_recall` 增加 storage 层候选召回接口，按 account/user/resource、`archived_at IS NULL`、时间窗和 `LIMIT` 预筛，并通过 0023 复合索引支撑 resource/no-resource 两种召回路径；
+  2. `resolve_context` 默认只取最近 180 天内的 `DEFAULT_EPISODIC_CANDIDATE_K` 个候选，再进行 embedding rerank / budget cap；
+  3. recall 写回合并为 `record_recall_access_batch` 单事务；
+  4. 显式 recall 的统计写回改为后台 `spawn_blocking` 执行，失败只记录 warning，不阻塞 `/context/resolve` 响应。
+  验收：1000+ episodes 时 `POST /context/resolve` P95 延迟不随记忆量线性增长。
+
+- ✅ **R2 观察捕获开销：PostToolUse 合批 + ensureSession 幂等化**
+  原问题：Claude Code 每个工具调用 spawn 一个 node 进程并发出 2 个 HTTP 请求
+  （`ensureSession` 前置 POST + observation POST）。
+  已完成：
+  1. `POST /sessions/{id}/observations` 在 session 不存在时自动创建同 ID session（upsert 语义，`http_smoke.rs::http_observation_upserts_missing_session` 覆盖）；
+  2. PostToolUse / Stop hooks 删除 observation 写入前的 `ensureSession` 前置请求；
+  3. SDK 回归测试断言 PostToolUse 单次工具调用只发 1 个 observation HTTP 请求。
+  验收：单次工具调用的 hook 开销 ≤ 1 个 HTTP 请求。
+
+- 🔶 **R4 真实宿主 e2e：hook 注册路径冒烟测试**
+  原问题：e2e 测试直接向 hook 脚本 stdin 喂 JSON，绕过了 Claude Code 的真实 hook 注册——
+  这是 P0-1（hooks 格式错误）能长期存活的根本原因。
+  已完成：
+  1. `sdk/tests/sdk.test.mjs` 已增加 Claude Code installer 回归测试，断言写出的 hooks 必须是按事件分组的 canonical schema，且不允许回退到旧 `hooks: [{event, cmd}]` 数组；
+  2. Codex installer 已改为执行 `codex features list` 探测 `hooks` / `codex_hooks` 支持，并在安装输出中区分 supported / unsupported / unknown；
+  3. `sdk/tests/sdk.test.mjs` 已用 fake Codex CLI 覆盖 hooks-supported 分支。
+  未完成：
+  1. CI 增加真实 `claude` CLI 冒烟（无凭据时 skip），验证宿主实际读取 `.claude/settings.local.json` 并触发 SessionStart 注入。
+  验收：安装器写出的配置若与宿主 schema 不符，CI 必须失败。
+
+### 中优先级
+
+- 🔶 **R3 API 版本统一：全部路由迁移 `/v1` 前缀**
+  原问题：仅 `/v1/memory:search`、`/v1/eval/recall` 等少数路由带版本前缀，
+  其余 110+ 路由是 flat 路径（`/sessions`、`/facts`、`/read`），architecture.md §3.2 已自述不一致。
+  已推进：
+  1. `/v1/` 路由已完整注册并与旧 flat 路由并行运行（`http/mod.rs` 双路由注册）；
+  2. `is_legacy_api_path()` 函数识别旧路径，中间件为旧路径添加 `Deprecation: true` + `Sunset: 2027-01-01` 响应头。
+  未完成：
+  1. 旧 flat 路径尚未移除（计划保留至 Sunset 日期后）；
+  2. SDK（hooks/MCP/CLI 的 `PATHS` 常量）尚未切换到 `/v1` 路径。
+  验收：`docs/architecture.md` §3.2 路由表全部以 `/v1` 开头，旧路径标记 deprecated，SDK 全部使用 `/v1` 路径。
+
+- ⬜ **R6 MCP 工具面收敛**
+  现状：SDK MCP 暴露 43 个工具，mfs-mcp crate 注册 33 个工具，schema 注入每请求约 ~1k tokens；CLI+Skill 已是主推路径。
+  目标：MCP 默认只注册核心工具（guide / search_memories / resolve_context /
+  store_observation / commit_session / timeline / get_observations），
+  其余移到 `MEMFUSE_MCP_FULL=1` 之类的 opt-in 开关后面；管理面统一走 CLI。
+  验收：默认 MCP 模式 schema 注入 token 量下降 ≥ 60%，e2e 不回归。
+
+### 低优先级
+
+- ⬜ **R5 migrations 编号说明**（同 P2-3）
+  现状：`crates/mfs-metadata/src/migrations/` 编号存在按库分流的重复变体
+  （0013×2、0014×3、0017×2）且缺 0004/0021，新贡献者难以判断归属。
+  目标：迁移目录内补一份 README，说明每个编号属于 metadata.sqlite 还是 canvas 库、
+  缺号原因；或按子目录拆分两套迁移序列。
+
+- ⬜ **双 MCP 面工具清单对照测试**
+  现状：SDK MCP（43 agent 工具）与 mfs-mcp crate（33 ops 工具）约定互不重名，但无 CI 保证。
+  目标：CI 增加一个清单对照测试，两边工具名出现交集即失败。
+
+- ⬜ **Stop hook 的 transcript 兜底**
+  现状：Stop hook 已改读 `assistant_message`；当宿主未提供该字段时（旧版本 Claude Code
+  或其他平台），可再从 `transcript_path` JSONL 解析最后一条 assistant 消息作为兜底。
+
+- ⬜ **UserPromptSubmit 轻量化端点**
+  现状：每个 prompt 都触发完整 resolve_context（含 embedding + intent 分类），
+  hook timeout 5s 内偶发超时即放弃注入。
+  目标：服务端提供一个低延迟的 `/context/signal` 轻量端点（仅 facts 置信度过滤 + FTS，
+  无 embedding/LLM），UserPromptSubmit 切换到该端点。
 
 ---
 
