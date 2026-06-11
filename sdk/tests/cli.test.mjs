@@ -700,6 +700,7 @@ server_url = "http://127.0.0.1:9"
     };
     delete env.MEMFUSE_SERVER_URL;
     delete env.MEMFUSE_CONFIG;
+    delete env.MEMFUSE_WORKSPACE_ROOT;
 
     const { stdout } = await execFileAsync(process.execPath, [
       'bin/memfuse.cjs',
@@ -732,6 +733,7 @@ server_url = "http://127.0.0.1:9"
       MEMFUSE_SERVER_BIN: process.execPath,
     };
     delete env.MEMFUSE_SERVER_URL;
+    delete env.MEMFUSE_WORKSPACE_ROOT;
 
     const { stdout } = await execFileAsync(process.execPath, [
       'bin/memfuse.cjs',

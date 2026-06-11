@@ -1,6 +1,6 @@
 {
   "name": "@percena/memfuse",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "description": "MemFuse SDK — unified package for MCP server, hooks, skills, and client library",
   "main": "dist/index.js",
